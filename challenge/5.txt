@@ -1,0 +1,5 @@
+[data parameters]
+files = .\challenge\05.mat
+outDir = .\challenge\05_REC
+#sliceList = 0
+reScale = 10.
