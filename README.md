@@ -1,22 +1,22 @@
-# Copyright (c) 2016 Johan Berglund
-# FWQPBO is distributed under the terms of the GNU General Public License
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*Copyright (c) 2016 Johan Berglund
+FWQPBO is distributed under the terms of the GNU General Public License
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.*
 
 ABOUT
 -------------------------------------------------------------------------------
-FQPBO v1.0 is a command-line tool for MRI fat-water separation based on QPBO
+FQPBO is a command-line tool for MRI fat-water separation based on QPBO
 graph cuts. Input paramaters are provided by human readable configuration files. 
 See example configuration files provided with FWQPBO for details. The core 
 algorithm is implemented in c++ and compiled into a windows 32-bit DLL file 
@@ -30,7 +30,7 @@ for ISMRM 2012 challenge from: http://challenge.ismrm.org/node/14)
 
 HOW TO CITE
 -------------------------------------------------------------------------------
-Berglund J. "Multi-scale graph cut algorithm for water-fat separation". In: 
+Berglund J. *Multi-scale graph cut algorithm for water-fat separation*. In: 
 Proceedings of the 23:rd Annual Meeting of ISMRM, Toronto, Canada, 2015. p 3653.
 
 DEPENDENCIES
