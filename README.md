@@ -1,5 +1,4 @@
-*Copyright (c) 2016 Johan Berglund*
-
+*Copyright (c) 2016 Johan Berglund*  
 *FWQPBO is distributed under the terms of the GNU General Public License*
 
 *This program is free software: you can redistribute it and/or modify*
@@ -12,7 +11,7 @@
 *MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the*
 *GNU General Public License for more details.*
 
-*You should have received a copy of the GNU General Public License
+*You should have received a copy of the GNU General Public License*
 *along with this program.  If not, see <http://www.gnu.org/licenses/>.*
 
 ABOUT
@@ -45,8 +44,8 @@ QPBO v1.4 by Vladimir Kolmogorov for the graph cuts
 
 CONTACT INFORMATION
 -------------------------------------------------------------------------------
-Johan Berglund, Ph.D.
-Dept. of Medical Physics
-Karolinska University Hospital, 
-Stockholm, Sweden
+Johan Berglund, Ph.D.  
+Dept. of Medical Physics  
+Karolinska University Hospital,  
+Stockholm, Sweden  
 johan.berglund@karolinska.se
