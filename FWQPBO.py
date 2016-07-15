@@ -1,5 +1,4 @@
 import numpy as np
-import ctypes
 import os
 import dicom
 import datetime
@@ -14,7 +13,6 @@ class AttrDict(dict):
 		super(AttrDict, self).__init__(*args, **kwargs)
 		self.__dict__ = self
 
-IMGTYPE = ctypes.c_float
 gyro = 42.58 # 1H gyromagnetic ratio
 
 # Dictionary of DICOM tags
@@ -465,13 +463,12 @@ def updateModelParams(mPar):
 	else: mPar.nFAC = 0
 	if mPar.nFAC>0 and mPar.P is not 11: raise Exception('FAC excpects exactly one water and ten triglyceride resonances')
 	mPar.M = 2+mPar.nFAC
-	
-	if mPar.nFAC in [1,2]:
-		if 'cl' in mPar: mPar.CL = float(mPar.cl)
-		else: mPar.CL = 17.4
-	if mPar.nFAC==1:
-		if 'p2u' in mPar: mPar.P2U = float(mPar.p2u)
-		else: mPar.p2u = 0.2
+	if 'cl' in mPar: mPar.CL = float(mPar.cl)
+	else: mPar.CL = 17.4  # Derived from Lundbom 2010
+	if 'p2u' in mPar: mPar.P2U = float(mPar.p2u)
+	else: mPar.P2U = 0.2  # Derived from Lundbom 2010
+	if 'ud' in mPar: mPar.UD = float(mPar.ud)
+	else: mPar.UD = 2.6  # Derived from Lundbom 2010
 	if mPar.nFAC==0:
 		mPar.alpha = np.zeros([mPar.M,mPar.P],dtype=np.float32)
 		mPar.alpha[0,0]=1.
@@ -554,106 +551,70 @@ def getSliceDataParams(dPar,slice,z):
 	sliceDataParams.nz = 1	
 	return sliceDataParams
 
-# Configure the fat-water separation function from the c++ DLL
-def init_FWcpp():
-	DLLdir = r'.'
-	try: lib = np.ctypeslib.load_library('FWQPBO', DLLdir)
-	except: raise Exception('FW.dll not found in dir "{}"'.format(DLLdir))
-	FWcpp = lib[1] # Does not work to access the function by name: lib.fwqpbo
-	FWcpp.restype = None # Needed for void functions
-	
-	FWcpp.argtypes = [	np.ctypeslib.ndpointer(IMGTYPE, flags='aligned, contiguous'),
-						np.ctypeslib.ndpointer(IMGTYPE, flags='aligned, contiguous'),
-						ctypes.c_int,
-						ctypes.c_int,
-						ctypes.c_int,
-						ctypes.c_int,
-						ctypes.c_float,
-						ctypes.c_float,
-						ctypes.c_float,
-						ctypes.c_float,
-						ctypes.c_float,
-						ctypes.c_float,
-						np.ctypeslib.ndpointer(ctypes.c_float, flags='aligned, contiguous'),
-						np.ctypeslib.ndpointer(ctypes.c_float, flags='aligned, contiguous'),
-						ctypes.c_int,
-						ctypes.c_int,
-						ctypes.c_float,
-						ctypes.c_int,
-						np.ctypeslib.ndpointer(ctypes.c_int, flags='aligned, contiguous'),
-						ctypes.c_int,
-						ctypes.c_bool,
-						ctypes.c_float,
-						ctypes.c_int,
-						ctypes.c_int,
-						ctypes.c_int,
-						ctypes.c_int,
-						ctypes.c_bool,
-						np.ctypeslib.ndpointer(IMGTYPE, flags='aligned, contiguous'),
-						np.ctypeslib.ndpointer(IMGTYPE, flags='aligned, contiguous'),
-						np.ctypeslib.ndpointer(IMGTYPE, flags='aligned, contiguous'),
-						np.ctypeslib.ndpointer(IMGTYPE, flags='aligned, contiguous')]
-	return FWcpp
-
 # Get the total fat component (needed for Fatty Acid Composition, trivial otherwise)
-def getFat(X,nVxl,alpha):
+def getFat(rho,nVxl,alpha):
 	fat = np.zeros(nVxl)+1j*np.zeros(nVxl)
 	for m in range(1,alpha.shape[0]):
-		fat += sum(alpha[m,1:])*X[m*nVxl:(m+1)*nVxl]
+		fat += sum(alpha[m,1:])*rho[m]
 	return fat
 
+def reconstruct(dPar,aPar,mPar,B0map=None,R2map=None):
+	method = 'FWQPBOCPP'
+	#method = 'FWQPBOPython'
+	m = __import__(method)
+	return m.reconstruct(dPar,aPar,mPar,B0map,R2map)
+
 # The core function: Allocate image matrices, call the DLL function, and save the images
-def processDataset(dPar,aPar,mPar):
+def reconstructAndSave(dPar,aPar,mPar):
 	if 'Temp' in dPar: mPar.CS[0] = 1.3+3.748-.01085*dPar.Temp # Temperature dependence according to Hernando 2014
 	
 	nVxl = dPar.nx*dPar.ny*dPar.nz
 	
-	Xreal = np.empty(nVxl*mPar.M,dtype=IMGTYPE)
-	Ximag = np.empty(nVxl*mPar.M,dtype=IMGTYPE)
-	R2map = np.empty(nVxl*(aPar.nR2>1),dtype=IMGTYPE)
-	B0map = np.empty(nVxl,dtype=IMGTYPE)
-	
-	FWcpp = init_FWcpp()
-	
-	Yreal = np.real(dPar.img).astype(IMGTYPE)
-	Yimag = np.imag(dPar.img).astype(IMGTYPE)
-	
 	if mPar.nFAC>0: # For Fatty Acid Composition
 		# First pass: use standard fat-water separation to determine B0 and R2*
-		FACalpha = mPar.alpha
-		FACM = mPar.M
-		mPar.UD = 2.6 # Derived from Lundbom 2010
+		mPar2 = AttrDict(mPar) # modify modelParams for pass 1
 		mPar.alpha = getFACalphas(mPar.CL,mPar.P2U,mPar.UD)
 		mPar.M = mPar.alpha.shape[0]
-	FWcpp(Yreal,Yimag,dPar.N,dPar.nx,dPar.ny,dPar.nz,dPar.dx,dPar.dy,dPar.dz,dPar.t1,dPar.dt,dPar.B0,mPar.CS,mPar.alpha.flatten(),mPar.M,mPar.P,aPar.R2step,aPar.nR2,aPar.iR2cand,aPar.nR2cand,aPar.FibSearch,aPar.mu,aPar.nB0,aPar.nICMiter,aPar.maxICMupdate,aPar.graphcutLevel,aPar.multiScale,Xreal,Ximag,R2map,B0map)
-	X = Xreal[:nVxl*mPar.M]+1j*Ximag[:nVxl*mPar.M]
+	rho,B0map,R2map = reconstruct(dPar,aPar,mPar)
 	eps = sys.float_info.epsilon
-	wat = X[0*nVxl:1*nVxl]
-	fat = getFat(X,nVxl,mPar.alpha)
-	#TODO: add magnitude discrimination alternative
-	ff = np.abs(fat[:])/(np.abs(wat[:])+np.abs(fat[:])+eps)
+	
+	wat = rho[0]
+	fat = getFat(rho,nVxl,mPar.alpha)
+	
+	#TODO: add magnitude discrimination alternative to config
+	magnitudeDiscrimination = False
+	if magnitudeDiscrimination: # to avoid bias from noise
+		ff = np.abs(fat/(wat+fat+eps))
+		wf = np.abs(wat/(wat+fat+eps)) 
+		ff[ff<.5]=1.-wf[ff<.5]
+	else: ff = np.abs(fat)/(np.abs(wat)+np.abs(fat)+eps)
 	
 	if mPar.nFAC>0: # For Fatty Acid Composition
-		#Re-calculate water and all fat components with FAC using the same B0- and R2*-maps
-		mPar.alpha = FACalpha
-		mPar.M = FACM
-		FWcpp(Yreal,Yimag,dPar.N,dPar.nx,dPar.ny,dPar.nz,dPar.dx,dPar.dy,dPar.dz,dPar.t1,dPar.dt,dPar.B0,mPar.CS,mPar.alpha.flatten(),mPar.M,mPar.P,aPar.R2step,-aPar.nR2,aPar.iR2cand,aPar.nR2cand,aPar.FibSearch,aPar.mu,aPar.nB0,0,aPar.maxICMupdate,100,aPar.multiScale,Xreal,Ximag,R2map,B0map)	
-		X = Xreal+1j*Ximag
+		# Second pass: Re-calculate water and all fat components with FAC using the B0- and R2*-map from first pass
+		mPar = mPar2 # Reset modelParams
+		
+		aPar2 = AttrDict(aPar) # modify algoParams for pass 2:
+		aPar2.nR2 = -aPar.nR2 # to use provided R2star-map
+		aPar2.nICMiter = 0 # to omit ICM
+		aPar2.graphcutLevel = 100 # to omit the graphcut
+		
+		rho,B0map,R2map = reconstruct(dPar,aPar2,mPar,B0map,R2map)
+		
 		if mPar.nFAC==1:	
 			# UD = F2/F1
-			UD = np.abs(X[2*nVxl:3*nVxl]/(X[1*nVxl:2*nVxl]+eps))
+			UD = np.abs(rho[2]/(rho[1]+eps))
 		elif mPar.nFAC==2:	
 			# UD = (F2+F3)/F1
 			# PUD = F3/F1
-			UD = np.abs((X[2*nVxl:3*nVxl]+X[3*nVxl:4*nVxl])/(X[1*nVxl:2*nVxl]+eps))
-			PUD = np.abs((X[3*nVxl:4*nVxl])/(X[1*nVxl:2*nVxl]+eps))
+			UD = np.abs((rho[2]+rho[3])/(rho[1]+eps))
+			PUD = np.abs((rho[3])/(rho[1]+eps))
 		elif mPar.nFAC==3:
 			# CL = 4+(F2+4F3+3F4)/3F1
 			# UD = (F3+F4)/F1
 			# PUD = F4/F1
-			CL = 4 + np.abs((X[2*nVxl:3*nVxl]+4*X[3*nVxl:4*nVxl]+3*X[4*nVxl:5*nVxl])/(3*X[1*nVxl:2*nVxl]+eps))
-			UD = np.abs((X[3*nVxl:4*nVxl]+X[4*nVxl:5*nVxl])/(X[1*nVxl:2*nVxl]+eps))
-			PUD = np.abs((X[4*nVxl:5*nVxl])/(X[1*nVxl:2*nVxl]+eps))
+			CL = 4 + np.abs((rho[2]+4*rho[3]+3*rho[4])/(3*rho[1]+eps))
+			UD = np.abs((rho[3]+rho[4])/(rho[1]+eps))
+			PUD = np.abs((rho[4])/(rho[1]+eps))
 		
 	# Images to be saved:
 	bwatfat = True # Water-only and fat-only
@@ -705,12 +666,12 @@ def FW(dataParamFile,algoParamFile,modelParamFile,outDir=None):
 	
 	# Run fat/water processing
 	if algoParams.use3D or len(dataParams.sliceList)==1:
-		processDataset(dataParams,algoParams,modelParams)
+		reconstructAndSave(dataParams,algoParams,modelParams)
 	else:
 		for z,slice in enumerate(dataParams.sliceList):
 			print('Processing slice {} ({}/{})...'.format(slice+1,z+1,len(dataParams.sliceList)))
 			sliceDataParams = getSliceDataParams(dataParams,slice,z)
-			processDataset(sliceDataParams,algoParams,modelParams)
+			reconstructAndSave(sliceDataParams,algoParams,modelParams)
 
 # Command-line tool
 def main():
