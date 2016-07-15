@@ -19,8 +19,8 @@ ABOUT
 FQPBO is a command-line tool for MRI fat-water separation based on QPBO
 graph cuts. Input paramaters are provided by human readable configuration files. 
 See example configuration files provided with FWQPBO for details. The core 
-algorithm is implemented in c++ and compiled into a windows 32-bit DLL file 
-which is called by a Python wrapper. 
+algorithm is implemented in c++ and compiled into a windows DLL file which is 
+called by a Python wrapper. 
 
 HOW TO USE
 -------------------------------------------------------------------------------
