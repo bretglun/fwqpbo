@@ -1,13 +1,14 @@
 import ctypes
 import numpy as np
 import sys
+import os
 
 IMGTYPE = ctypes.c_float
 gyro=42.58
 
 # Configure the QPBO graphcut function from the c++ DLL
 def init_QPBOcpp():
-    DLLdir = r'.'
+    DLLdir = os.path.dirname(__file__)
     if '32 bit' in sys.version: DLLfile = 'QPBO32'
     else: DLLfile = 'QPBO64'
     try: lib = np.ctypeslib.load_library(DLLfile, DLLdir)

@@ -1,12 +1,13 @@
 import ctypes
 import numpy as np
 import sys
+import os
 
 IMGTYPE = ctypes.c_float
 
 # Configure the fat-water separation function from the c++ DLL
 def init_FWcpp():
-    DLLdir = r'.'
+    DLLdir = os.path.dirname(__file__)
     if '32 bit' in sys.version: DLLfile = 'FWQPBO32'
     else: DLLfile = 'FWQPBO64'
     try: lib = np.ctypeslib.load_library(DLLfile, DLLdir)
