@@ -510,6 +510,8 @@ def updateAlgoParams(aPar):
 	else: aPar.multiScale = False
 	if 'use3d' in aPar: aPar.use3D = aPar.use3d == 'True'
 	else: aPar.use3D = False
+	if 'magnitudediscrimination' in aPar: aPar.magnitudeDiscrimination = aPar.magnitudediscrimination == 'True'
+	else: aPar.magnitudeDiscrimination = True
 
 	if aPar.nR2>1: aPar.R2step = aPar.R2max/(aPar.nR2-1) #[sec-1]
 	else: aPar.R2step = 1.0 #[sec-1]
@@ -581,9 +583,8 @@ def reconstructAndSave(dPar,aPar,mPar):
 	wat = rho[0]
 	fat = getFat(rho,nVxl,mPar.alpha)
 	
-	#TODO: add magnitude discrimination alternative to config
 	magnitudeDiscrimination = False
-	if magnitudeDiscrimination: # to avoid bias from noise
+	if aPar.magnitudeDiscrimination: # to avoid bias from noise
 		ff = np.abs(fat/(wat+fat+eps))
 		wf = np.abs(wat/(wat+fat+eps)) 
 		ff[ff<.5]=1.-wf[ff<.5]
@@ -633,7 +634,7 @@ def reconstructAndSave(dPar,aPar,mPar):
 	if (bwatfat): save(dPar.outDir+r'/fat',np.abs(fat),dPar,0.,1.,'Fat-only',102)
 	if (bipop): save(dPar.outDir+r'/ip',np.abs(wat+fat),dPar,0.,1.,'In-phase',103)
 	if (bipop): save(dPar.outDir+r'/op',np.abs(wat-fat),dPar,0.,1.,'Opposed-phase',104)
-	if (bff): save(dPar.outDir+r'/ff',ff,dPar,0.,1/1000,'Fat Fraction',105)
+	if (bff): save(dPar.outDir+r'/ff',ff,dPar,-1.*aPar.magnitudeDiscrimination,1/1000,'Fat Fraction',105)
 	if (aPar.nR2>1): save(dPar.outDir+r'/R2map',R2map,dPar,0.,1.0,'R2*',106)
 	if (bB0map): save(dPar.outDir+r'/B0map',B0map,dPar,0.,1/1000,'Off-resonance (ppb)',107)
 	if (mPar.nFAC>2): save(dPar.outDir+r'/CL',CL,dPar,0.,1/100,'FAC Chain length (1/100)',108)

@@ -9,3 +9,4 @@ nICMiter = 10
 graphcut = True
 multiScale = True
 use3D = True
+magnitudeDiscrimination = False
