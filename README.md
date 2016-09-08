@@ -30,8 +30,8 @@ for ISMRM 2012 challenge from: http://challenge.ismrm.org/node/14)
 
 HOW TO CITE
 -------------------------------------------------------------------------------
-Berglund J. *Multi-scale graph cut algorithm for efficient water-fat 
-separation*. Accepted for publication in Magn Reson Med, 2016. 
+Berglund J and Skorpil M. *Multi-scale graph cut algorithm for efficient water-
+fat separation*. Accepted for publication in Magn Reson Med, 2016. 
 
 DEPENDENCIES
 -------------------------------------------------------------------------------
