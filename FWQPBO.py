@@ -21,6 +21,7 @@ tagDict = {	'Image Type':0x00080008,
 			'SOP Instance UID':0x00080018,
 			'Series Description':0x0008103E,
 			'Slice Thickness':0x00180050,
+			'Spacing Between Slices':0x00180088,
 			'Echo Time':0x00180081,
 			'Imaging Frequency':0x00180084,
 			'Protocol Name':0x00181030,
@@ -178,6 +179,12 @@ def getTagValue(ds,key,frame=None):
 	if tagDict[key] in ds: return ds[tagDict[key]].value
 	return None
 
+# Translates series description tag to M/P/R/I for magnitude/phase/real/imaginary
+def seriesDescription2type(seriesDescription):
+	for type, description in [('R','Real Image'),('I','Imag Image')]:
+		if description in seriesDescription: return type
+	return None
+
 # Translates image type tag to M/P/R/I for magnitude/phase/real/imaginary
 def typeTag2type(tagValue):
 	for type in ['M','P','R','I']:
@@ -190,7 +197,10 @@ def getAttribute(ds,attr,frame=None):
 	if attr == 'Slice Location' and attribute is None: 
 		attribute = getTagValue(ds,'Image Position (Patient)',frame)
 		if attribute: attribute = attribute[2]
-	elif attr == 'Image Type' and attribute: attribute = typeTag2type(attribute)
+	elif attr == 'Image Type' and attribute: # special handling of image type
+		attribute = typeTag2type(attribute)
+		if not attribute:
+			attribute = seriesDescription2type(getTagValue(ds,'Series Description',frame))
 	return attribute
 	
 # Check if attribute is in DICOM dataset ds
@@ -203,7 +213,7 @@ def AttrInDataset(ds,attr,multiframe):
 	return False
 
 # List of DICOM attributes required for the water-fat separation
-reqAttributes = ['Image Type','Echo Time','Slice Location','Imaging Frequency','Columns','Rows','Pixel Spacing','Slice Thickness']
+reqAttributes = ['Image Type','Echo Time','Slice Location','Imaging Frequency','Columns','Rows','Pixel Spacing','Spacing Between Slices']
 
 # Checks if list of DICOM files contains required information
 def isValidDataset(files,printOutput=False):
@@ -308,6 +318,7 @@ def updateDataParamsDICOM(dPar,files):
 	if not 'echoes' in dPar: dPar.echoes = range(dPar.totalN)
 	echoTimes = [echoTimes[echo] for echo in dPar.echoes]
 	dPar.N = len(dPar.echoes)
+	if dPar.N<3: raise Exception('At least 3 echoes required, only {} found'.format(dPar.N))
 	dPar.t1 = echoTimes[0]
 	dPar.dt = np.mean(np.diff(echoTimes))
 	if np.max(np.diff(echoTimes))/dPar.dt>1.05 or np.min(np.diff(echoTimes))/dPar.dt<.95:
@@ -361,7 +372,8 @@ def updateDataParamsDICOM(dPar,files):
 					imagPart = iDcm.pixel_array.flatten()
 					reScaleIntercept=getAttribute(rDcm,'Rescale Intercept') #Assumes real and imaginary slope/intercept are equal
 					reScaleSlope=getAttribute(rDcm,'Rescale Slope')
-				offset=reScaleIntercept/reScaleSlope
+				if reScaleIntercept and reScaleSlope: offset=reScaleIntercept/reScaleSlope
+				else: offset = 0.
 				c=(realPart+offset)+1.0*1j*(imagPart+offset)
 			else: raise Exception('Unknown image types')
 			img.append(c)
@@ -401,7 +413,7 @@ def updateDataParamsMATLAB(dPar,file):
 		img = img[:,:,:,:,dPar.echoes]
 		echoTimes = echoTimes[dPar.echoes]
 		dPar.N = len(dPar.echoes)
-		
+	if dPar.N<3: raise Exception('At least 3 echoes required, only {} found'.format(dPar.N))
 	dPar.t1 = echoTimes[0]
 	dPar.dt = np.mean(np.diff(echoTimes))
 	if np.max(np.diff(echoTimes))/dPar.dt>1.05 or np.min(np.diff(echoTimes))/dPar.dt<.95: 
@@ -583,7 +595,6 @@ def reconstructAndSave(dPar,aPar,mPar):
 	wat = rho[0]
 	fat = getFat(rho,nVxl,mPar.alpha)
 	
-	magnitudeDiscrimination = False
 	if aPar.magnitudeDiscrimination: # to avoid bias from noise
 		ff = np.abs(fat/(wat+fat+eps))
 		wf = np.abs(wat/(wat+fat+eps)) 
