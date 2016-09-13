@@ -60,11 +60,11 @@ def getSeriesInstanceUID(): return getSOPInstanceUID() + ".0.0.0"
 
 
 # Set window so that 95% of pixels are inside
-def get95percentileWindow(im):
+def get95percentileWindow(im, intercept, slope):
     lims = np.percentile(im, [2.5, 97.5])
     width = lims[1]-lims[0]
     center = width/2.+lims[0]
-    return center, width
+    return center*slope+intercept, width*slope
 
 
 # Sets DICOM element value in dataset ds at tag=key. Use frame for multiframe
@@ -99,12 +99,9 @@ def setTagValue(ds, key, val, frame=None, VR=None):
 
 # Save numpy array to DICOM image.
 # Based on input DICOM image if exists, else create from scratch
-def save(outDir, image, dPar, reScaleIntercept,
-         reScaleSlope, seriesDescription, seriesNumber):
+def save(outDir, image, dPar, seriesDescription, seriesNumber,
+         reScaleIntercept=0., reScaleSlope=1.):
     print(r'Writing image{} to "{}"'.format('s'*(dPar.nz > 1), outDir))
-    if (reScaleSlope is None):  # Calculate reScaleSlope based on image data
-        reScaleSlope = np.max(image)/2**15
-        print('reScaleSlope calculated to: ', reScaleSlope)
     image.shape = (dPar.nz, dPar.ny, dPar.nx)
     if not os.path.isdir(outDir):
         os.mkdir(outDir)
@@ -121,12 +118,12 @@ def save(outDir, image, dPar, reScaleIntercept,
     for z, slice in enumerate(dPar.sliceList):
         filename = outDir+r'/{}.dcm'.format(slice)
         # Prepare pixel data; truncate and scale
-        # TODO: Are reScale intercept/slope implemented as DICOM standard?
         im = np.array([max(0, (val-reScaleIntercept)/reScaleSlope)
                       for val in image[z, :, :].flatten()])
         im = im.astype('uint16')
         # Set window so that 95% of pixels are inside
-        windowCenter, windowWidth = get95percentileWindow(im)
+        windowCenter, windowWidth = get95percentileWindow(
+                                            im, reScaleIntercept, reScaleSlope)
         if dPar.frameList:
             # Get frame
             frame = dPar.frameList[dPar.totalN*slice*len(imType)]
@@ -689,9 +686,13 @@ def updateAlgoParams(aPar):
     else:
         aPar.use3D = False
     if 'magnitudediscrimination' in aPar:
-        aPar.magnitudeDiscrimination = aPar.magnitudediscrimination == 'True'
+        aPar.magnDiscr = aPar.magnitudediscrimination == 'True'
     else:
-        aPar.magnitudeDiscrimination = True
+        aPar.magnDiscr = True
+    if 'realestimates' in aPar:
+        aPar.realEstimates = aPar.realestimates == 'True'
+    else:
+        aPar.realEstimates = False
 
     if aPar.nR2 > 1:
         aPar.R2step = aPar.R2max/(aPar.nR2-1)  # [sec-1]
@@ -785,7 +786,7 @@ def reconstructAndSave(dPar, aPar, mPar):
     wat = rho[0]
     fat = getFat(rho, nVxl, mPar.alpha)
 
-    if aPar.magnitudeDiscrimination:  # to avoid bias from noise
+    if aPar.magnDiscr:  # to avoid bias from noise
         ff = np.abs(fat/(wat+fat+eps))
         wf = np.abs(wat/(wat+fat+eps))
         ff[ff < .5] = 1.-wf[ff < .5]
@@ -821,6 +822,7 @@ def reconstructAndSave(dPar, aPar, mPar):
             PUD = np.abs((rho[4])/(rho[1]+eps))
 
     # Images to be saved:
+    bphi = aPar.realEstimates  # Inital phase phi
     bwatfat = True  # Water-only and fat-only
     bipop = False  # Synthetic in-phase and opposed-phase
     bff = True  # Fat fraction
@@ -834,32 +836,33 @@ def reconstructAndSave(dPar, aPar, mPar):
 
     if not os.path.isdir(dPar.outDir):
         os.mkdir(dPar.outDir)
+    if (bphi):
+        save(dPar.outDir+r'/phi', np.angle(wat, deg=True)+180, dPar,
+             'phi', 100)
     if (bwatfat):
-        save(dPar.outDir+r'/wat', np.abs(wat), dPar, 0., 1., 'Water-only', 101)
+        save(dPar.outDir+r'/wat', np.abs(wat), dPar, 'Water-only', 101)
     if (bwatfat):
-        save(dPar.outDir+r'/fat', np.abs(fat), dPar, 0., 1., 'Fat-only', 102)
+        save(dPar.outDir+r'/fat', np.abs(fat), dPar, 'Fat-only', 102)
     if (bipop):
-        save(dPar.outDir+r'/ip', np.abs(wat+fat), dPar, 0., 1.,
-             'In-phase', 103)
+        save(dPar.outDir+r'/ip', np.abs(wat+fat), dPar, 'In-phase', 103)
     if (bipop):
-        save(dPar.outDir+r'/op', np.abs(wat-fat), dPar, 0., 1.,
-             'Opposed-phase', 104)
+        save(dPar.outDir+r'/op', np.abs(wat-fat), dPar, 'Opposed-phase', 104)
     if (bff):
-        save(dPar.outDir+r'/ff', ff, dPar, -1.*aPar.magnitudeDiscrimination,
-             1/1000, 'Fat Fraction', 105)
+        save(dPar.outDir+r'/ff', ff*100, dPar, 'Fat Fraction (%)', 105,
+             -100.*aPar.magnDiscr, 1/10)
     if (aPar.nR2 > 1):
-        save(dPar.outDir+r'/R2map', R2map, dPar, 0., 1.0, 'R2*', 106)
+        save(dPar.outDir+r'/R2map', R2map, dPar, 'R2*', 106)
     if (bB0map):
-        save(dPar.outDir+r'/B0map', B0map, dPar, 0., 1/1000,
+        save(dPar.outDir+r'/B0map', B0map*1000, dPar,
              'Off-resonance (ppb)', 107)
     if (mPar.nFAC > 2):
-        save(dPar.outDir+r'/CL', CL, dPar, 0., 1/100,
+        save(dPar.outDir+r'/CL', CL*100, dPar,
              'FAC Chain length (1/100)', 108)
     if (mPar.nFAC > 0):
-        save(dPar.outDir+r'/UD', UD, dPar, 0., 1/100,
+        save(dPar.outDir+r'/UD', UD*100, dPar,
              'FAC Unsaturation degree (1/100)', 109)
     if (mPar.nFAC > 1):
-        save(dPar.outDir+r'/PUD', PUD, dPar, 0., 1/100,
+        save(dPar.outDir+r'/PUD', PUD*100, dPar,
              'FAC Polyunsaturation degree (1/100)', 110)
 
 

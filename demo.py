@@ -14,7 +14,7 @@ def getScore(case, dir):
             dcm = dicom.read_file(os.path.join(dir, file))
         except:
             raise Exception('File not found: {}'.format(file))
-        reScaleSlope = dcm[0x00281053].value
+        reScaleSlope = dcm[0x00281053].value / 100  # FF in %
         recFF = np.concatenate(
             (recFF, dcm.pixel_array.transpose().flatten() * reScaleSlope))
     recFF.shape = recFF.shape + (1,)
