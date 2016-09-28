@@ -367,9 +367,9 @@ def getType(frameList, printType=False):
             print('Magnitude/Real/Imaginary images')
         return 'MRI'
     else:
-        raise Exception('Unknown combination of image types: {} real, ' +
-                        '{} imag, {} magn, {} phase'.format(numR,
-                                                            numI, numM, numP))
+        raise Exception('Unknown combination of image types: ' +
+                        '{} real, {} imag, {} magn, {} phase'
+                        .format(numR, numI, numM, numP))
 
 
 # update dPar with info retrieved from the DICOM files including image data
@@ -628,7 +628,7 @@ def updateModelParams(mPar):
             for (p, a) in enumerate(mPar.relamps.split(',')):
                 mPar.alpha[1, p+1] = float(a)
         else:
-            for p in range(mPar.P):
+            for p in range(1, mPar.P):
                 mPar.alpha[1, p] = float(1/len(fatCS))
     elif mPar.nFAC == 1:
         mPar.alpha = getFACalphas(mPar.CL, mPar.P2U)

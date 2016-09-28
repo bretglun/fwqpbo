@@ -9,11 +9,11 @@ gyro = 42.58
 
 # Configure the QPBO graphcut function from the c++ DLL
 def init_QPBOcpp():
-    DLLdir = os.path.dirname(__file__)
+    DLLdir = os.path.join(os.path.dirname(__file__), r'cpp/bin/Release')
     if '32 bit' in sys.version:
-        DLLfile = 'QPBO32'
+        DLLfile = 'qpbo32'
     else:
-        DLLfile = 'QPBO64'
+        DLLfile = 'qpbo64'
     try:
         lib = np.ctypeslib.load_library(DLLfile, DLLdir)
     except:
@@ -49,12 +49,16 @@ def greedyR2(J, nVxl):
     return R2
 
 
-def getR2Residuals(Y, dB0, CBt, nB0, nR2, nVxl):
+# Calculate LS error J as function of R2*
+def getR2Residuals(Y, dB0, C, nB0, nR2, nVxl, D=None):
     J = np.zeros(shape=(nR2, nVxl))
     for b in range(nB0):
         for r in range(nR2):
-            J[r, dB0 == b] = np.linalg.norm(np.dot(CBt[b][r], Y[:, dB0 == b]),
-                                            axis=0)**2
+            if not D:  # complex-valued estimates
+                y = Y[:, dB0 == b]
+            else:  # real-valued estimates
+                y = getRealDemodulated(Y[:, dB0 == b], D[r][b])[0]
+            J[r, dB0 == b] = np.linalg.norm(np.dot(C[r][b], y), axis=0)**2
     return J
 
 
@@ -299,26 +303,54 @@ def calculateFieldMap(nB0, level, graphcutLevel, multiScale, maxICMupdate,
     return dB0
 
 
-def getB0Residuals(Y, CBt, nB0, nVxl, iR2cand):
+# Calculate initial phase phi according to
+# Bydder et al. MRI 29 (2011): 216-221.
+def getPhi(Y, D):
+    phi = np.zeros((Y.shape[1]))
+    for i in range(Y.shape[1]):
+        y = Y[:, i]
+        phi[i] = .5*np.angle(np.dot(np.dot(y.transpose(), D), y))
+    return phi
+
+
+# Calculate phi, remove it from Y and return separate real and imag parts
+def getRealDemodulated(Y, D):
+    phi = getPhi(Y, D)
+    Y /= np.exp(1j*phi)
+    return np.concatenate((np.real(Y), np.imag(Y))), phi
+
+
+# Calculate LS error J as function of B0
+def getB0Residuals(Y, C, nB0, nVxl, iR2cand, D=None):
+    import time
+    print('Calculating residuals in...', end='')
+    t = time.time()
     J = np.zeros(shape=(nB0, nVxl))
     # TODO: loop over all R2candidates
+    r = 0
     for b in range(nB0):
-        J[b, :] = np.linalg.norm(np.dot(CBt[b][iR2cand[0]], Y), axis=0)**2
+        if not D:  # complex-valued estimates
+            y = Y
+        else:  # real-valued estimates
+            y = getRealDemodulated(Y, D[r][b])[0]
+        J[b, :] = np.linalg.norm(np.dot(C[iR2cand[r]][b], y), axis=0)**2
+    print('{:.2} sec'.format(time.time()-t))
     return J
 
 
-# Construct demodulation vectors for each B0 value
-def demodulationVectors(nB0, N):
-    Bt = []
+# Construct modulation vectors for each B0 value
+def modulationVectors(nB0, N):
+    B, Bh = [], []
     for b in range(nB0):
         omega = 2.*np.pi*b/nB0
-        Bt.append(np.eye(N)+0j*np.eye(N))
+        B.append(np.eye(N)+0j*np.eye(N))
         for n in range(N):
-            Bt[b][n, n] = np.exp(complex(0., -n*omega))
-    return Bt
+            B[b][n, n] = np.exp(complex(0., n*omega))
+        Bh.append(B[b].conj())
+    return B, Bh
 
 
-# Construct modelMatrix M
+# Construct matrix RA
 def modelMatrix(dPar, mPar, R2):
     RA = np.zeros(shape=(dPar.N, mPar.M))+1j*np.zeros(shape=(dPar.N, mPar.M))
     for n in range(dPar.N):
@@ -329,6 +361,22 @@ def modelMatrix(dPar, mPar, R2):
             omega = 2.*np.pi*gyro*dPar.B0*(mPar.CS[p]-mPar.CS[0])
             RA[n, 1] += mPar.alpha[1][p]*np.exp(complex(-t*R2, t*omega))
     return RA
+
+
+# Get matrix Dtmp defined so that D = Bconj*Dtmp*Bh
+# Following Bydder et al. MRI 29 (2011): 216-221.
+def getDtmp(RA):
+    RAh = RA.conj().T
+    inv = np.linalg.inv(np.real(np.dot(RAh, RA)))
+    Dtmp = np.dot(RA.conj(), np.dot(inv, RAh))
+    return Dtmp
+
+
+# Separate and concatenate real and imag parts of complex matrix M
+def realify(M):
+    R = np.real(M)
+    I = np.imag(M)
+    return np.concatenate((np.concatenate((R, I)), np.concatenate((-I, R))), 1)
 
 
 # Perform the actual reconstruction
@@ -345,21 +393,32 @@ def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
     Y.shape = (dPar.N, nVxl)
 
     # Prepare matrices
-    RA, RAp, C = [], [], []
+    # Off-resonance modulation vectors (one for each off-resonance value)
+    B, Bh = modulationVectors(aPar.nB0, dPar.N)
+    RA, RAp, C, Mp = [], [], [], []
+    D = None
+    if aPar.realEstimates:
+        D = []  # Matrix for calculating phi (needed for real-valued estimates)
     for r in range(nR2):
         R2 = r*aPar.R2step
         RA.append(modelMatrix(dPar, mPar, R2))
+        if aPar.realEstimates:
+            D.append([])
+            Dtmp = getDtmp(RA[r])
+            RA[r] = np.concatenate((np.real(RA[r]), np.imag(RA[r])))
         RAp.append(np.linalg.pinv(RA[r]))
         # Null space projection matrices
-        C.append(np.eye(dPar.N)-np.dot(RA[r], RAp[r]))
+        proj = np.eye(dPar.N*(1+aPar.realEstimates))-np.dot(RA[r], RAp[r])
 
-    # Off-resonance demodulation vectors (one for each off-resonance value)
-    Bt = demodulationVectors(aPar.nB0, dPar.N)
-    CBt = []  # Product of C and Bt
-    for b in range(aPar.nB0):
-        CBt.append([])
-        for r in range(nR2):
-            CBt[b].append(np.dot(C[r], Bt[b]))
+        C.append([])
+        Mp.append([])
+        for b in range(aPar.nB0):
+            if aPar.realEstimates:
+                D[r].append(np.dot(B[b].conj(), np.dot(Dtmp, Bh[b])))
+                B[b] = realify(B[b])
+                Bh[b] = realify(Bh[b])
+            C[r].append(np.dot(np.dot(B[b], proj), Bh[b]))
+            Mp[r].append(np.dot(RAp[r], Bh[b]))
 
     if determineB0:
         V = []  # Precalculate discontinuity costs
@@ -370,21 +429,29 @@ def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
         level = {'L': 0, 'nx': dPar.nx, 'ny': dPar.ny, 'nz': dPar.nz,
                  'sx': 1, 'sy': 1, 'sz': 1,
                  'dx': dPar.dx, 'dy': dPar.dy, 'dz': dPar.dz}
-        J = getB0Residuals(Y, CBt, aPar.nB0, nVxl, aPar.iR2cand)
+        J = getB0Residuals(Y, C, aPar.nB0, nVxl, aPar.iR2cand, D)
         dB0 = calculateFieldMap(aPar.nB0, level, aPar.graphcutLevel,
                                 aPar.multiScale, aPar.maxICMupdate,
                                 aPar.nICMiter, J, V, aPar.mu)
 
     if determineR2:
-        J = getR2Residuals(Y, dB0, CBt, aPar.nB0, nR2, nVxl)
+        J = getR2Residuals(Y, dB0, C, aPar.nB0, nR2, nVxl, D)
         R2 = greedyR2(J, nVxl)
 
     # Find least squares solution given dB0 and R2
     rho = np.zeros(shape=(mPar.M, nVxl))+1j*np.zeros(shape=(mPar.M, nVxl))
     for r in range(nR2):
         for b in range(aPar.nB0):
-            rho[:, (dB0 == b)*(R2 == r)] = \
-                np.dot(np.dot(RAp[r], Bt[b]), Y[:, (dB0 == b)*(R2 == r)])
+            vxls = (dB0 == b)*(R2 == r)
+            if not D:  # complex estimates
+                y = Y[:, vxls]
+            else:  # real-valued estimates
+                y, phi = getRealDemodulated(Y[:, vxls], D[r][b])
+            rho[:, vxls] = np.dot(Mp[r][b], y)
+            if D:
+                #  Assert phi is the phase angle of water
+                phi[rho[0, vxls] < 0] += np.pi
+                rho[:, vxls] *= np.exp(1j*phi)
 
     if B0map is None:
         B0map = np.empty(nVxl, dtype=IMGTYPE)
@@ -397,7 +464,6 @@ def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
     if determineB0:
         # For B0 index -> off-resonance in ppm
         B0step = 1.0/aPar.nB0/dPar.dt/gyro/dPar.B0
-        # //if (iB0>nB0/2) iB0 = iB0-nB0; // "Wrap" offres period about zero
         B0map[:] = dB0*B0step
 
     return rho, B0map, R2map

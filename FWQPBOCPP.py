@@ -9,11 +9,11 @@ IMGTYPE = ctypes.c_float
 
 
 def init_FWcpp():
-    DLLdir = os.path.dirname(__file__)
+    DLLdir = os.path.join(os.path.dirname(__file__), r'cpp/bin/Release')
     if '32 bit' in sys.version:
-        DLLfile = 'FWQPBO32'
+        DLLfile = 'FW32'
     else:
-        DLLfile = 'FWQPBO64'
+        DLLfile = 'FW64'
     try:
         lib = np.ctypeslib.load_library(DLLfile, DLLdir)
     except:
