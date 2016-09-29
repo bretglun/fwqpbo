@@ -11,15 +11,15 @@ gyro = 42.58
 def init_QPBOcpp():
     DLLdir = os.path.join(os.path.dirname(__file__), r'cpp/bin/Release')
     if '32 bit' in sys.version:
-        DLLfile = 'qpbo32'
+        DLLfile = 'FW32'
     else:
-        DLLfile = 'qpbo64'
+        DLLfile = 'FW64'
     try:
-        QOBODLL = np.ctypeslib.load_library(DLLfile, DLLdir)
+        FWDLL = np.ctypeslib.load_library(DLLfile, DLLdir)
     except:
         print(sys.exc_info())
         raise Exception('{}.dll not found in dir "{}"'.format(DLLfile, DLLdir))
-    QPBOcpp = QOBODLL.gc  # Get exported function from DLL
+    QPBOcpp = FWDLL.gc  # Get exported function from DLL
     QPBOcpp .restype = None  # Needed for void functions
 
     QPBOcpp.argtypes = [
