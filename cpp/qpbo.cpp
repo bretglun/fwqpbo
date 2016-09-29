@@ -62,6 +62,8 @@ void QPBOgc(int nx, int ny, int nz, image<vector<float> >* D, image<vector<float
 	for (int i=0; i<numNodes; i++) label->data[i]=MRF->GetLabel(i);
 	delete MRF;
 }
+
+extern "C" {
 __declspec(dllexport) void __cdecl gc(int nx, int ny, int nz, const float* D, const float* Vx, const float* Vy, const float* Vz, int* label)
 {
     image<vector<float> >* D_im = new image<vector<float> >(nx,ny,nz,false);
@@ -84,4 +86,5 @@ __declspec(dllexport) void __cdecl gc(int nx, int ny, int nz, const float* D, co
     delete Vy_im;
     delete Vz_im;
 	return;
+}
 }

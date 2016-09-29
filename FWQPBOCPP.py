@@ -15,12 +15,12 @@ def init_FWcpp():
     else:
         DLLfile = 'FW64'
     try:
-        lib = np.ctypeslib.load_library(DLLfile, DLLdir)
+        FWDLL = np.ctypeslib.load_library(DLLfile, DLLdir)
     except:
         print(sys.exc_info())
         raise Exception('{}.dll not found in dir "{}"'.format(DLLfile, DLLdir))
 
-    FWcpp = lib[1]  # Does not work to access the function by name: lib.fwqpbo
+    FWcpp = FWDLL.fwqpbo  # Get exported function from DLL
     FWcpp.restype = None  # Needed for void functions
 
     FWcpp.argtypes = [

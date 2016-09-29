@@ -45,6 +45,8 @@ cpp/FW32.cbp
 cpp/FW32.layout
 cpp/FW64.cbp
 cpp/FW64.layout
+cpp/FW32.depend
+cpp/FW64.depend
 cpp/bin/Release/libFW32.a
 cpp/bin/Release/libFW32.def
 cpp/bin/Release/libFW64.a

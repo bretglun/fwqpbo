@@ -15,11 +15,11 @@ def init_QPBOcpp():
     else:
         DLLfile = 'qpbo64'
     try:
-        lib = np.ctypeslib.load_library(DLLfile, DLLdir)
+        QOBODLL = np.ctypeslib.load_library(DLLfile, DLLdir)
     except:
         print(sys.exc_info())
         raise Exception('{}.dll not found in dir "{}"'.format(DLLfile, DLLdir))
-    QPBOcpp = lib[1]  # Doesnt work to access the function by name: lib.fwqpbo
+    QPBOcpp = QOBODLL.gc  # Get exported function from DLL
     QPBOcpp .restype = None  # Needed for void functions
 
     QPBOcpp.argtypes = [

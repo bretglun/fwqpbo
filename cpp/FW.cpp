@@ -532,6 +532,7 @@ void calculateFieldMap(image<int>* dB0,int nB0,Level level,int graphcutLevel,boo
 	delete wz;
 }
 
+extern "C" {
 __declspec(dllexport) void __cdecl fwqpbo(const IMGTYPE* Yreal,const IMGTYPE* Yimag,int N,int nx,int ny,int nz,float dx,float dy,float dz,float t1,float dt,float B0,float* CS,float* alpha,int M,int P,float R2step,int nR2,int* iR2cand,int nR2cand,bool FibSearch,float mu,int nB0,int nICMiter,int maxICMupdate,int graphcutLevel,bool multiScale,IMGTYPE* Xreal,IMGTYPE* Ximag,IMGTYPE* R2map,IMGTYPE* B0map)
 {
 	// ---------- PREPARE AND PRECALCULATE ---------- //
@@ -652,4 +653,5 @@ __declspec(dllexport) void __cdecl fwqpbo(const IMGTYPE* Yreal,const IMGTYPE* Yi
 	if (determineR2) delete R2;
 	delete S;
 	return;
+}
 }
