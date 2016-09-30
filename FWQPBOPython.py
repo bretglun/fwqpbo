@@ -416,6 +416,8 @@ def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
             C[r].append(np.dot(np.dot(B[b], proj), Bh[b]))
             Mp[r].append(np.dot(RAp[r], Bh[b]))
 
+    # For B0 index -> off-resonance in ppm
+    B0step = 1.0/aPar.nB0/dPar.dt/gyro/dPar.B0
     if determineB0:
         V = []  # Precalculate discontinuity costs
         for b in range(aPar.nB0):
@@ -429,6 +431,10 @@ def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
         dB0 = calculateFieldMap(aPar.nB0, level, aPar.graphcutLevel,
                                 aPar.multiScale, aPar.maxICMupdate,
                                 aPar.nICMiter, J, V, aPar.mu)
+    elif B0map is None:
+        dB0 = np.zeros(nVxl, dtype=int)
+    else:
+        dB0 = np.array(B0map/B0step, dtype=int)
 
     if determineR2:
         J = getR2Residuals(Y, dB0, C, aPar.nB0, nR2, nVxl, D)
@@ -450,7 +456,7 @@ def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
                 rho[:, vxls] *= np.exp(1j*phi)
 
     if B0map is None:
-        B0map = np.empty(nVxl, dtype=IMGTYPE)
+        B0map = np.zeros(nVxl, dtype=IMGTYPE)
     if R2map is None:
         R2map = np.empty(nVxl, dtype=IMGTYPE)
 
@@ -458,8 +464,6 @@ def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
         R2map[:] = R2*aPar.R2step
 
     if determineB0:
-        # For B0 index -> off-resonance in ppm
-        B0step = 1.0/aPar.nB0/dPar.dt/gyro/dPar.B0
         B0map[:] = dB0*B0step
 
     return rho, B0map, R2map
