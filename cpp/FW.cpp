@@ -11,7 +11,7 @@ using Eigen::VectorXcf;
 using Eigen::MatrixXcd;
 using Eigen::VectorXcd;
 
-#include "Image.h"
+#include "image.h"
 #include "QPBO-v1.4.src/QPBO.h"
 #include "fibonacci.h"
 
@@ -78,10 +78,11 @@ void createEchoImages(image<VectorXcf>* S,const IMGTYPE* re,const IMGTYPE* im,in
 	vector<int> nstep(N);
 	for (int n=0; n<N; n++)	nstep[n] = n*nx*ny*nz;
 	for (int i=0; i<nx*ny*nz; i++) {
-		S->data[i] = VectorXcf(N);
+		VectorXcf s = VectorXcf(N);
 		for (int n=0; n<N; n++) {
 			int j = i+nstep[n];
-			S->data[i](n)=complex<float>(re[j],im[j]);
+			s(n)=complex<float>(re[j],im[j]);
+        S->set(i, s);
 		}
 	}
 }
@@ -105,7 +106,7 @@ void getResidualImages(image<vector<RESIDUALTYPE> >* J,image<VectorXcf>* S,vecto
     VectorXcf Svec = VectorXcf(Cvec.size());
     for (int i=0; i<nVxl; i++) {
         progressBar(i,nVxl);
-        VectorXcf s = S->data[i];
+        VectorXcf s = S->get(i);
         for (int m=0; m<N; m++)
             for (int n=0; n<=m; n++)
                 Svec(lowTriInd[m][n]) = conj(s(m))*s(n);
@@ -117,7 +118,7 @@ void getResidualImages(image<vector<RESIDUALTYPE> >* J,image<VectorXcf>* S,vecto
                 if (val<res[b]) res[b] = val;
             }
         }
-        J->data[i] = res;
+        J->set(i,res);
     }
 }
 
@@ -152,27 +153,27 @@ vector<pair<RESIDUALTYPE,int> > findLocalMinima(vector<RESIDUALTYPE> f, int T) {
 
 // In each voxel, find the two smallest local residual minima in a period of omega
 void findTwoSsmallestMinima(image<vector<RESIDUALTYPE> >* J, image<int>* min1, image<int>* min2, int nB0) {
-	for (int i=0; i<J->xsize()*J->ysize()*J->zsize(); i++) {
-		vector<pair<RESIDUALTYPE,int> > minima = findLocalMinima(J->data[i],nB0);
+	for (int i=0; i<J->size(); i++) {
+		vector<pair<RESIDUALTYPE,int> > minima = findLocalMinima(J->get(i),nB0);
 		if (minima.size()>1) {
 			sort(minima.begin(), minima.end());
 			int m1 = minima[0].second;
-			min1->data[i] = m1;
+			min1->set(i,m1);
 			int m2 = minima[1].second;
-			min2->data[i] = m2;
+			min2->set(i,m2);
 		} else if (minima.size()==1) {
 			int m1 = minima[0].second;
-			min1->data[i] = m1;
-			min2->data[i] = m1;
+			min1->set(i,m1);
+			min2->set(i,m1);
 		} else {
-			min1->data[i] = 0; // Assign dummy minimum
-			min2->data[i] = 0; // Assign dummy minimum
+			min1->set(i,0); // Assign dummy minimum
+			min2->set(i,0); // Assign dummy minimum
 		}
 	}
 }
 
 // Exhaustive (brute force) search in interval [0,nR2-1]
-unsigned int ExhaustiveSearch(VectorXcf &s, vector<VectorXcf> Cvec, int nR2, int N, vector<vector<int> > lowTriInd) {
+unsigned int ExhaustiveSearch(VectorXcf s, vector<VectorXcf> Cvec, int nR2, int N, vector<vector<int> > lowTriInd) {
     VectorXcf Svec = VectorXcf(Cvec.size());
     for (int m=0; m<N; m++)
         for (int n=0; n<=m; n++)
@@ -192,7 +193,7 @@ unsigned int ExhaustiveSearch(VectorXcf &s, vector<VectorXcf> Cvec, int nR2, int
 }
 
 // Fibonacci search in interval [0,N-1]. Expects N>2
-unsigned int FibonacciSearch(VectorXcf &s, vector<VectorXcf> Cvec, int nR2, int N, vector<vector<int> > lowTriInd) {
+unsigned int FibonacciSearch(VectorXcf s, vector<VectorXcf> Cvec, int nR2, int N, vector<vector<int> > lowTriInd) {
     VectorXcf Svec = VectorXcf(Cvec.size());
     for (int m=0; m<N; m++)
         for (int n=0; n<=m; n++)
@@ -241,10 +242,10 @@ unsigned int FibonacciSearch(VectorXcf &s, vector<VectorXcf> Cvec, int nR2, int 
 // find J'' at each local minimum by second order finite differences
 void find2ndDerivativeAtMinimum(image<vector<RESIDUALTYPE> >* J,image<RESIDUALTYPE>* ddJ,image<int>* mini,int nB0,int nx,int ny,int nz) {
 	for (int i=0; i<nx*ny*nz; i++) {
-		vector<RESIDUALTYPE> res = J->data[i];
-		int b = mini->data[i];
+		vector<RESIDUALTYPE> res = J->get(i);
+		int b = mini->get(i);
 		// NOTE: No division by square(steplength) since square(steplength) not included in V
-		ddJ->data[i] = res[(b+nB0-1)%nB0]+res[(b+1)%nB0]-2.0*res[b];
+		ddJ->set(i,res[(b+nB0-1)%nB0]+res[(b+1)%nB0]-2.0*res[b]);
 	}
 }
 
@@ -254,42 +255,42 @@ void calcWeights(image<float>* wx,image<float>* wy,image<float>* wz,image<RESIDU
 	float commonZ = mu/dz;
 	for (int z=0; z<nz; z++)
 		for (int y=0; y<ny; y++)
-			for (int x=0; x<nx-1; x++) imRef(wx,x,y,z) = commonX*min(imRef(ddJ,x,y,z),imRef(ddJ,x+1,y,z));
+			for (int x=0; x<nx-1; x++) wx->set(x,y,z,commonX*min(ddJ->get(x,y,z),ddJ->get(x+1,y,z)));
 	for (int z=0; z<nz; z++)
 		for (int y=0; y<ny-1; y++)
-			for (int x=0; x<nx; x++) imRef(wy,x,y,z) = commonY*min(imRef(ddJ,x,y,z),imRef(ddJ,x,y+1,z));
+			for (int x=0; x<nx; x++) wy->set(x,y,z,commonY*min(ddJ->get(x,y,z),ddJ->get(x,y+1,z)));
 	for (int z=0; z<nz-1; z++)
 		for (int y=0; y<ny; y++)
-			for (int x=0; x<nx; x++) imRef(wz,x,y,z) = commonZ*min(imRef(ddJ,x,y,z),imRef(ddJ,x,y,z+1));
+			for (int x=0; x<nx; x++) wz->set(x,y,z,commonZ*min(ddJ->get(x,y,z),ddJ->get(x,y,z+1)));
 }
 
 void addTermsToMRF(QPBO<MRFTYPE>* q,image<vector<RESIDUALTYPE> >* J,image<int>* min1,image<int>* min2,image<float>* wx,image<float>* wy,image<float>* wz,vector<float> V,int nx,int ny,int nz) {
     // Add unary terms:
-	for (int i=0; i<nx*ny*nz; i++) q->AddUnaryTerm(i,J->data[i][min1->data[i]],J->data[i][min2->data[i]]);
+	for (int i=0; i<nx*ny*nz; i++) q->AddUnaryTerm(i,J->get(i)[min1->get(i)],J->get(i)[min2->get(i)]);
 
     for (int z=0; z<nz; z++) // Add binary terms in x-direction
         for (int y=0; y<ny; y++)
             for (int x=0; x<nx-1; x++) {
-            	float w = imRef(wx,x,y,z);
+            	float w = wx->get(x,y,z);
                 int i = (z*ny+y)*nx+x;
                 int j = i+1;
-				q->AddPairwiseTerm(i,j,w*V[abs(imRef(min1,x,y,z)-imRef(min1,x+1,y,z))],w*V[abs(imRef(min1,x,y,z)-imRef(min2,x+1,y,z))],w*V[abs(imRef(min2,x,y,z)-imRef(min1,x+1,y,z))],w*V[abs(imRef(min2,x,y,z)-imRef(min2,x+1,y,z))]);
+				q->AddPairwiseTerm(i,j,w*V[abs(min1->get(x,y,z)-min1->get(x+1,y,z))],w*V[abs(min1->get(x,y,z)-min2->get(x+1,y,z))],w*V[abs(min2->get(x,y,z)-min1->get(x+1,y,z))],w*V[abs(min2->get(x,y,z)-min2->get(x+1,y,z))]);
             }
     for (int z=0; z<nz; z++) // Add binary terms in y-direction
 		for (int y=0; y<ny-1; y++)
 			for (int x=0; x<nx; x++) {
-				float w = imRef(wy,x,y,z);
+				float w = wy->get(x,y,z);
 				int i = (z*ny+y)*nx+x;
 				int j = i+nx;
-				q->AddPairwiseTerm(i,j,w*V[abs(imRef(min1,x,y,z)-imRef(min1,x,y+1,z))],w*V[abs(imRef(min1,x,y,z)-imRef(min2,x,y+1,z))], w*V[abs(imRef(min2,x,y,z)-imRef(min1,x,y+1,z))], w*V[abs(imRef(min2,x,y,z)-imRef(min2,x,y+1,z))]);
+				q->AddPairwiseTerm(i,j,w*V[abs(min1->get(x,y,z)-min1->get(x,y+1,z))],w*V[abs(min1->get(x,y,z)-min2->get(x,y+1,z))], w*V[abs(min2->get(x,y,z)-min1->get(x,y+1,z))], w*V[abs(min2->get(x,y,z)-min2->get(x,y+1,z))]);
 			}
     for (int z=0; z<nz-1; z++) // Add binary terms in z-direction
         for (int y=0; y<ny; y++)
             for (int x=0; x<nx; x++) {
-            	float w = imRef(wz,x,y,z);
+            	float w = wz->get(x,y,z);
                 int i = (z*ny+y)*nx+x;
                 int j = i+ny*nx;
-				q->AddPairwiseTerm(i,j,w*V[abs(imRef(min1,x,y,z)-imRef(min1,x,y,z+1))], w*V[abs(imRef(min1,x,y,z)-imRef(min2,x,y,z+1))], w*V[abs(imRef(min2,x,y,z)-imRef(min1,x,y,z+1))], w*V[abs(imRef(min2,x,y,z)-imRef(min2,x,y,z+1))]);
+				q->AddPairwiseTerm(i,j,w*V[abs(min1->get(x,y,z)-min1->get(x,y,z+1))], w*V[abs(min1->get(x,y,z)-min2->get(x,y,z+1))], w*V[abs(min2->get(x,y,z)-min1->get(x,y,z+1))], w*V[abs(min2->get(x,y,z)-min2->get(x,y,z+1))]);
             }
 }
 
@@ -306,22 +307,22 @@ vector<Neighbor> getNeighbors(int x,int y,int z,int nx,int ny,int nz,image<float
 	vector<Neighbor> ngbs;
 	Neighbor ngb;
 	if (x+1<nx) { // Right
-		ngb.x=x+1; ngb.y=y; ngb.z=z; ngb.weight=imRef(wx,x,y,z);
+		ngb.x=x+1; ngb.y=y; ngb.z=z; ngb.weight=wx->get(x,y,z);
 		ngbs.push_back(ngb);
 	} if (x>0) { // Left
-		ngb.x=x-1; ngb.y=y; ngb.z=z; ngb.weight=imRef(wx,x-1,y,z);
+		ngb.x=x-1; ngb.y=y; ngb.z=z; ngb.weight=wx->get(x-1,y,z);
 		ngbs.push_back(ngb);
 	} if (y+1<ny) { // Up
-		ngb.x=x; ngb.y=y+1; ngb.z=z; ngb.weight=imRef(wy,x,y,z);
+		ngb.x=x; ngb.y=y+1; ngb.z=z; ngb.weight=wy->get(x,y,z);
 		ngbs.push_back(ngb);
 	} if (y>0) { // Down
-		ngb.x=x; ngb.y=y-1; ngb.z=z; ngb.weight=imRef(wy,x,y-1,z);
+		ngb.x=x; ngb.y=y-1; ngb.z=z; ngb.weight=wy->get(x,y-1,z);
 		ngbs.push_back(ngb);
 	} if (z+1<nz) { // Above
-		ngb.x=x; ngb.y=y; ngb.z=z+1; ngb.weight=imRef(wz,x,y,z);
+		ngb.x=x; ngb.y=y; ngb.z=z+1; ngb.weight=wz->get(x,y,z);
 		ngbs.push_back(ngb);
 	}if (z>0) { // Below
-		ngb.x=x; ngb.y=y; ngb.z=z-1; ngb.weight=imRef(wz,x,y,z-1);
+		ngb.x=x; ngb.y=y; ngb.z=z-1; ngb.weight=wz->get(x,y,z-1);
 		ngbs.push_back(ngb);
 	}
 	return ngbs;
@@ -337,26 +338,26 @@ vector<vector<int> > getOrders(int L) {
 }
 
 void ICM(image<int>* current,int L,int maxLabelUpdate,int nIter,image<vector<RESIDUALTYPE> >* J,vector<float> V,image<float>* wx,image<float>* wy,image<float>* wz,int nx,int ny,int nz) {
-	image<int>* previous = new image<int>(nx,ny,nz,false);
+	image<int>* previous = new image<int>(nx,ny,nz);
 	vector<vector<int> > orders = getOrders(L); // Precalculate label traverse orders
 	int max_o = min(L,1+maxLabelUpdate*2);
 	for (int k=0; k<nIter; k++) { // ICM iterate
 		cout << k+1 << ", ";
-		for (int i=0; i<nx*ny*nz; i++)	previous->data[i] = current->data[i]; // Update prev image
+		for (int i=0; i<nx*ny*nz; i++)	previous->set(i,current->get(i)); // Update prev image
 		// Then update labels:
 		for (int z=0; z<nz; z++)
 			for (int y=0; y<ny; y++)
 				for (int x=0; x<nx; x++) {
 					vector<Neighbor> ngbs = getNeighbors(x,y,z,nx,ny,nz,wx,wy,wz);
-					int prev = imRef(previous,x,y,z);
+					int prev = previous->get(x,y,z);
 					vector<int> order = orders[prev]; // Centric order about previous label
 					int best = prev;
 					MRFTYPE min_cost = std::numeric_limits<MRFTYPE>::max();
 					for (int o=0; o<max_o; o++) { // For all labels (in order order)
 						int l = order[o];
-						MRFTYPE cost = imRef(J,x,y,z)[l]; // Unary cost
+						MRFTYPE cost = J->get(x,y,z)[l]; // Unary cost
 						for (unsigned int n = 0; cost<min_cost && n<ngbs.size(); n++) { // Loop over neighbors, abort if cost exceeds min_cost
-							int ngb_label = imRef(previous,ngbs[n].x,ngbs[n].y,ngbs[n].z);
+							int ngb_label = previous->get(ngbs[n].x,ngbs[n].y,ngbs[n].z);
 							cost += ngbs[n].weight*V[abs(l-ngb_label)]; // Add binary cost (weights already scaled)
 						}
 						if (cost<min_cost) {
@@ -364,7 +365,7 @@ void ICM(image<int>* current,int L,int maxLabelUpdate,int nIter,image<vector<RES
 							best = l;
 						}
 					}
-					imRef(current,x,y,z) = best;
+					current->set(x,y,z,best);
 				}
 	}
 	delete previous;
@@ -438,15 +439,15 @@ void getHighLevelResidualImage(image<vector<RESIDUALTYPE> >* Jhigh,image<vector<
 				bool twoXchilds = highLevel.sx>1 && x+1<level.nx;
 				bool twoYchilds = highLevel.sy>1 && y+1<level.ny;
 				bool twoZchilds = highLevel.sz>1 && z+1<level.nz;
-				childs.push_back(imRef(J,x,y,z));
-				if (twoXchilds) childs.push_back(imRef(J,x+1,y,z));
-				if (twoYchilds) childs.push_back(imRef(J,x,y+1,z));
-				if (twoZchilds) childs.push_back(imRef(J,x,y,z+1));
-				if (twoXchilds && twoYchilds) childs.push_back(imRef(J,x+1,y+1,z));
-				if (twoXchilds && twoZchilds) childs.push_back(imRef(J,x+1,y,z+1));
-				if (twoYchilds && twoZchilds) childs.push_back(imRef(J,x,y+1,z+1));
-				if (twoXchilds && twoYchilds && twoZchilds) childs.push_back(imRef(J,x+1,y+1,z+1));
-				imRef(Jhigh,X,Y,Z) = getSumVector(childs, scale);
+				childs.push_back(J->get(x,y,z));
+				if (twoXchilds) childs.push_back(J->get(x+1,y,z));
+				if (twoYchilds) childs.push_back(J->get(x,y+1,z));
+				if (twoZchilds) childs.push_back(J->get(x,y,z+1));
+				if (twoXchilds && twoYchilds) childs.push_back(J->get(x+1,y+1,z));
+				if (twoXchilds && twoZchilds) childs.push_back(J->get(x+1,y,z+1));
+				if (twoYchilds && twoZchilds) childs.push_back(J->get(x,y+1,z+1));
+				if (twoXchilds && twoYchilds && twoZchilds) childs.push_back(J->get(x+1,y+1,z+1));
+				Jhigh->set(X,Y,Z,getSumVector(childs, scale));
 			}
 }
 
@@ -454,7 +455,7 @@ int getB0fromHighLevel(image<int>* dB0high,Level highLevel,int i,Level level) {
 	int z = i/(level.nx*level.ny);
 	int y = (i-level.nx*level.ny*z)/level.nx;
 	int x = i-level.nx*(y+level.ny*z);
-	return imRef(dB0high,x/highLevel.sx,y/highLevel.sy,z/highLevel.sz);
+	return dB0high->get(x/highLevel.sx,y/highLevel.sy,z/highLevel.sz);
 }
 
 
@@ -463,7 +464,7 @@ void calculateFieldMap(image<int>* dB0,int nB0,Level level,int graphcutLevel,boo
 	int numNodes = level.nx*level.ny*level.nz;
 	if (numNodes==1) {
 		cout << "Level (1,1,1):" << endl << "Trivial case...";
-		dB0->data[0]=(findGlobalMinimum(J->data[0],nB0)).second;
+		dB0->set(0,(findGlobalMinimum(J->get(0),nB0)).second);
 		cout << "DONE" << endl;
 		return;
 	}
@@ -473,9 +474,9 @@ void calculateFieldMap(image<int>* dB0,int nB0,Level level,int graphcutLevel,boo
 	Level highLevel;
 	if (multiScale) {
 		highLevel = getHigherLevel(level);
-		image<vector<RESIDUALTYPE> >* Jhigh = new image<vector<RESIDUALTYPE> >(highLevel.nx,highLevel.ny,highLevel.nz,false); // Residual image
+		image<vector<RESIDUALTYPE> >* Jhigh = new image<vector<RESIDUALTYPE> >(highLevel.nx,highLevel.ny,highLevel.nz); // Residual image
 		getHighLevelResidualImage(Jhigh,J,highLevel,level);
-		dB0high = new image<int>(highLevel.nx,highLevel.ny,highLevel.nz,false); // Off-resonance index image
+		dB0high = new image<int>(highLevel.nx,highLevel.ny,highLevel.nz); // Off-resonance index image
 		calculateFieldMap(dB0high,nB0,highLevel,graphcutLevel,multiScale,maxICMupdate,nICMiter,Jhigh,V,mu); // Recursion
 		delete Jhigh;
 		cout << "Level ("<<level.nx<<","<<level.ny<<","<<level.nz<<"): " << endl;
@@ -484,15 +485,15 @@ void calculateFieldMap(image<int>* dB0,int nB0,Level level,int graphcutLevel,boo
 	///// QPBO
 	cout << "Preparing MRF...";
 
-	image<int>* min1 = new image<int>(level.nx,level.ny,level.nz,false);
-	image<int>* min2 = new image<int>(level.nx,level.ny,level.nz,false);
+	image<int>* min1 = new image<int>(level.nx,level.ny,level.nz);
+	image<int>* min2 = new image<int>(level.nx,level.ny,level.nz);
 	findTwoSsmallestMinima(J, min1, min2, nB0);
 
-	image<RESIDUALTYPE>* ddJ = new image<RESIDUALTYPE>(level.nx,level.ny,level.nz,false); // 2nd derivative image
+	image<RESIDUALTYPE>* ddJ = new image<RESIDUALTYPE>(level.nx,level.ny,level.nz); // 2nd derivative image
 	find2ndDerivativeAtMinimum(J,ddJ,min1,nB0,level.nx,level.ny,level.nz);
-	image<float>* wx = new image<float>(level.nx,level.ny,level.nz,false);
-	image<float>* wy = new image<float>(level.nx,level.ny,level.nz,false);
-	image<float>* wz = new image<float>(level.nx,level.ny,level.nz,false);
+	image<float>* wx = new image<float>(level.nx,level.ny,level.nz);
+	image<float>* wy = new image<float>(level.nx,level.ny,level.nz);
+	image<float>* wz = new image<float>(level.nx,level.ny,level.nz);
 	calcWeights(wx,wy,wz,ddJ,mu,level.dx,level.dy,level.dz,level.nx,level.ny,level.nz);
 	delete ddJ;
 
@@ -511,10 +512,10 @@ void calculateFieldMap(image<int>* dB0,int nB0,Level level,int graphcutLevel,boo
 	}
 
 	for (int i=0; i<numNodes; i++) {
-		if (graphcut && MRF->GetLabel(i)==1) dB0->data[i]=min2->data[i];
-		else if (graphcut && MRF->GetLabel(i)==0) dB0->data[i]=min1->data[i];
-		else if (multiScale) dB0->data[i]=getB0fromHighLevel(dB0high,highLevel,i,level); // Get from higher level if not determined
-		else dB0->data[i]=min1->data[i]; // If not determined, use smallest minimum
+		if (graphcut && MRF->GetLabel(i)==1) dB0->set(i,min2->get(i));
+		else if (graphcut && MRF->GetLabel(i)==0) dB0->set(i,min1->get(i));
+		else if (multiScale) dB0->set(i,getB0fromHighLevel(dB0high,highLevel,i,level)); // Get from higher level if not determined
+		else dB0->set(i,min1->get(i)); // If not determined, use smallest minimum
 	}
 	if (multiScale) delete dB0high;
 	if (graphcut) delete MRF;
@@ -536,17 +537,18 @@ void makeImage(image<vector<float> >* im,const float* data,int N,int nx,int ny,i
 	vector<int> nstep(N);
 	for (int n=0; n<N; n++)	nstep[n] = n*nx*ny*nz;
 	for (int i=0; i<nx*ny*nz; i++) {
-		im->data[i] = vector<float>(N);
+		vector<float> v = vector<float>(N);
 		for (int n=0; n<N; n++) {
 			int j = i+nstep[n];
-			im->data[i][n]=data[j];
+			v[n]=data[j];
+        im->set(i,v);
 		}
 	}
 }
 
 void unmakeImage(image<int>* im,int* data,int nx,int ny,int nz) {
 	for (int i=0; i<nx*ny*nz; i++) {
-		data[i] = im->data[i];
+		data[i] = im->get(i);
 	}
 }
 
@@ -559,50 +561,50 @@ void QPBOgc(int nx, int ny, int nz, image<vector<float> >* D, image<vector<float
     MRF->AddNode(numNodes); // add all nodes
 
     // Add unary terms:
-	for (int i=0; i<nx*ny*nz; i++) MRF->AddUnaryTerm(i,D->data[i][0],D->data[i][1]);
+	for (int i=0; i<nx*ny*nz; i++) MRF->AddUnaryTerm(i,D->get(i)[0],D->get(i)[1]);
 
     for (int z=0; z<nz; z++) // Add binary terms in x-direction
         for (int y=0; y<ny; y++)
             for (int x=0; x<nx-1; x++) {
                 int i = (z*ny+y)*nx+x;
                 int j = i+1;
-				MRF->AddPairwiseTerm(i,j,imRef(Vx,x,y,z)[0],imRef(Vx,x,y,z)[1],imRef(Vx,x,y,z)[2],imRef(Vx,x,y,z)[3]);
+				MRF->AddPairwiseTerm(i,j,Vx->get(x,y,z)[0],Vx->get(x,y,z)[1],Vx->get(x,y,z)[2],Vx->get(x,y,z)[3]);
             }
     for (int z=0; z<nz; z++) // Add binary terms in y-direction
 		for (int y=0; y<ny-1; y++)
 			for (int x=0; x<nx; x++) {
 				int i = (z*ny+y)*nx+x;
 				int j = i+nx;
-				MRF->AddPairwiseTerm(i,j,imRef(Vy,x,y,z)[0],imRef(Vy,x,y,z)[1],imRef(Vy,x,y,z)[2],imRef(Vy,x,y,z)[3]);
+				MRF->AddPairwiseTerm(i,j,Vy->get(x,y,z)[0],Vy->get(x,y,z)[1],Vy->get(x,y,z)[2],Vy->get(x,y,z)[3]);
 			}
     for (int z=0; z<nz-1; z++) // Add binary terms in z-direction
         for (int y=0; y<ny; y++)
             for (int x=0; x<nx; x++) {
                 int i = (z*ny+y)*nx+x;
                 int j = i+ny*nx;
-				MRF->AddPairwiseTerm(i,j,imRef(Vz,x,y,z)[0],imRef(Vz,x,y,z)[1],imRef(Vz,x,y,z)[2],imRef(Vz,x,y,z)[3]);
+				MRF->AddPairwiseTerm(i,j,Vz->get(x,y,z)[0],Vz->get(x,y,z)[1],Vz->get(x,y,z)[2],Vz->get(x,y,z)[3]);
             }
 
     MRF->Solve(); // Run QPBO
 
-	for (int i=0; i<numNodes; i++) label->data[i]=MRF->GetLabel(i);
+	for (int i=0; i<numNodes; i++) label->set(i,MRF->GetLabel(i));
 	delete MRF;
 }
 
 extern "C" {
 __declspec(dllexport) void __cdecl gc(int nx, int ny, int nz, const float* D, const float* Vx, const float* Vy, const float* Vz, int* label)
 {
-    image<vector<float> >* D_im = new image<vector<float> >(nx,ny,nz,false);
-	image<vector<float> >* Vx_im = new image<vector<float> >(nx-1,ny,nz,false);
-	image<vector<float> >* Vy_im = new image<vector<float> >(nx,ny-1,nz,false);
-	image<vector<float> >* Vz_im = new image<vector<float> >(nx,ny,nz-1,false);
+    image<vector<float> >* D_im = new image<vector<float> >(nx,ny,nz);
+	image<vector<float> >* Vx_im = new image<vector<float> >(nx-1,ny,nz);
+	image<vector<float> >* Vy_im = new image<vector<float> >(nx,ny-1,nz);
+	image<vector<float> >* Vz_im = new image<vector<float> >(nx,ny,nz-1);
 
 	makeImage(D_im,D,2,nx,ny,nz);
 	makeImage(Vx_im,Vx,4,nx-1,ny,nz);
 	makeImage(Vy_im,Vy,4,nx,ny-1,nz);
 	makeImage(Vz_im,Vz,4,nx,ny,nz-1);
 
-    image<int>* label_im = new image<int>(nx,ny,nz,false);
+    image<int>* label_im = new image<int>(nx,ny,nz);
     QPBOgc(nx, ny, nz, D_im, Vx_im, Vy_im, Vz_im, label_im);
 
     unmakeImage(label_im,label,nx,ny,nz);
@@ -631,7 +633,7 @@ __declspec(dllexport) void __cdecl fwqpbo(const IMGTYPE* Yreal,const IMGTYPE* Yi
     for (int m=0; m<N; m++) for (int n=0; n<=m; n++) lowTriInd[m][n] = (m+1)*m/2+n;
     int vecLen = (N+1)*N/2; // Length of matrices on "lower triangular vector form"
 
-	image<VectorXcf>* S = new image<VectorXcf>(nx,ny,nz,false);
+	image<VectorXcf>* S = new image<VectorXcf>(nx,ny,nz);
 	createEchoImages(S,Yreal,Yimag,N,nx,ny,nz); 			    // Put raw data into complex vector image
 
 	MatrixXcf A = modelMatrix(t1, dt, B0, N, CS, alpha, M, P);  // Model matrix
@@ -662,13 +664,13 @@ __declspec(dllexport) void __cdecl fwqpbo(const IMGTYPE* Yreal,const IMGTYPE* Yi
 
 	cout << "DONE" << endl;
 
-	image<int>* dB0 = new image<int>(nx,ny,nz,false); // Off-resonance index image
+	image<int>* dB0 = new image<int>(nx,ny,nz); // Off-resonance index image
 	float B0step = 1.0/nB0/dt/gyro/B0; // For converting B0 index to off-resonance in ppm
 	if (determineB0) {
         // ---------- RESIDUAL CALCULATIONS ---------- //
         cout << "Residual calculations..." << endl;
 
-        image<vector<RESIDUALTYPE> >* J = new image<vector<RESIDUALTYPE> >(nx,ny,nz,false); // Residual image
+        image<vector<RESIDUALTYPE> >* J = new image<vector<RESIDUALTYPE> >(nx,ny,nz); // Residual image
         getResidualImages(J,S,Cvec,lowTriInd,N,nB0,iR2cand,nR2cand,nx*ny*nz);
 
         cout << "DONE" << endl;
@@ -688,19 +690,19 @@ __declspec(dllexport) void __cdecl fwqpbo(const IMGTYPE* Yreal,const IMGTYPE* Yi
     }
     else
     	for (int i=0; i<nx*ny*nz; i++)
-            dB0->data[i] = int(B0map[i]/B0step);
+            dB0->set(i,int(B0map[i]/B0step));
 
 	image<int>* R2=NULL;
 	if (determineR2) {
 	// ---------- ESTIMATE R2* ---------- //
 		cout << "Estimating R2*-map...";
 
-		R2 = new image<int>(nx,ny,nz,false); // R2* index image
+		R2 = new image<int>(nx,ny,nz); // R2* index image
 		for (int i=0; i<nx*ny*nz; i++) {
-			if (nR2==1) R2->data[i] = 0;
+			if (nR2==1) R2->set(i,0);
 			else {
-				if (FibSearch && nR2>2) R2->data[i] = FibonacciSearch(S->data[i], Cvec[dB0->data[i]], nR2, N, lowTriInd);
-				else R2->data[i] = ExhaustiveSearch(S->data[i], Cvec[dB0->data[i]], nR2, N, lowTriInd);
+				if (FibSearch && nR2>2) R2->set(i,FibonacciSearch(S->get(i), Cvec[dB0->get(i)], nR2, N, lowTriInd));
+				else R2->set(i,ExhaustiveSearch(S->get(i), Cvec[dB0->get(i)], nR2, N, lowTriInd));
 			}
 		}
 		cout << "DONE" << endl;
@@ -710,19 +712,19 @@ __declspec(dllexport) void __cdecl fwqpbo(const IMGTYPE* Yreal,const IMGTYPE* Yi
 	cout << "Finding least-squares solution...";
 
 	for (int i=0; i<nx*ny*nz; i++) {
-        int iB0 = dB0->data[i];
+        int iB0 = dB0->get(i);
         B0map[i]=IMGTYPE(iB0*B0step);
 
 		int iR2;
 		if (nR2>1) {
             if (determineR2) {
-                iR2 = R2->data[i];
+                iR2 = R2->get(i);
                 R2map[i]=IMGTYPE(iR2*R2step);
             }
             else iR2 = int(R2map[i]/R2step);
 		}
 		else iR2 = 0;
-        VectorXcf X = Qp[iB0][iR2]*S->data[i];
+        VectorXcf X = Qp[iB0][iR2]*S->get(i);
         for (int m=0; m<M; m++) {
             Xreal[i+m*nx*ny*nz]=IMGTYPE(real(X[m]));
             Ximag[i+m*nx*ny*nz]=IMGTYPE(imag(X[m]));

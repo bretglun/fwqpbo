@@ -1,10 +1,3 @@
-/*
- * fibonacci.h
- *
- *  Created on: 18 aug 2014
- *      Author: 8nfl
- */
-
 #ifndef FIBONACCI_H_
 #define FIBONACCI_H_
 

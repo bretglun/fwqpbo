@@ -55,6 +55,7 @@ cpp/bin/Release/libqpbo32.a
 cpp/bin/Release/libqpbo32.def
 cpp/bin/Release/libqpbo64.a
 cpp/bin/Release/libqpbo64.def
+cpp/bin/Debug
 cpp/obj/
 cpp/qpbo32.cbp
 cpp/qpbo32.layout
