@@ -322,9 +322,6 @@ def getRealDemodulated(Y, D):
 
 # Calculate LS error J as function of B0
 def getB0Residuals(Y, C, nB0, nVxl, iR2cand, D=None):
-    import time
-    print('Calculating residuals in...', end='')
-    t = time.time()
     J = np.zeros(shape=(nB0, nVxl))
     # TODO: loop over all R2candidates
     r = 0
@@ -334,7 +331,6 @@ def getB0Residuals(Y, C, nB0, nVxl, iR2cand, D=None):
         else:  # real-valued estimates
             y = getRealDemodulated(Y, D[r][b])[0]
         J[b, :] = np.linalg.norm(np.dot(C[iR2cand[r]][b], y), axis=0)**2
-    print('{:.2} sec'.format(time.time()-t))
     return J
 
 

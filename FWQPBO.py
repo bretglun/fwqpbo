@@ -693,6 +693,10 @@ def updateAlgoParams(aPar):
         aPar.realEstimates = aPar.realestimates == 'True'
     else:
         aPar.realEstimates = False
+    if 'pythonfw' in aPar:
+        aPar.pythonFW = aPar.pythonfw == 'True'
+    else:
+        aPar.pythonFW = False
 
     if aPar.nR2 > 1:
         aPar.R2step = aPar.R2max/(aPar.nR2-1)  # [sec-1]
@@ -761,8 +765,10 @@ def getFat(rho, nVxl, alpha):
 
 
 def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
-    method = 'FWQPBOCPP'
-    # method = 'FWQPBOPython'
+    if aPar.pythonFW:
+        method = 'FWQPBOPython'
+    else:
+        method = 'FWQPBOCPP'
     m = __import__(method)
     return m.reconstruct(dPar, aPar, mPar, B0map, R2map)
 
