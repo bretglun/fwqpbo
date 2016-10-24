@@ -40,6 +40,7 @@ def init_FWcpp():
         np.ctypeslib.ndpointer(ctypes.c_float, flags='aligned, contiguous'),
         ctypes.c_int,
         ctypes.c_int,
+        ctypes.c_bool,
         ctypes.c_float,
         ctypes.c_int,
         np.ctypeslib.ndpointer(ctypes.c_int, flags='aligned, contiguous'),
@@ -76,9 +77,10 @@ def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
     FWcpp = init_FWcpp()
     FWcpp(Yreal, Yimag, dPar.N, dPar.nx, dPar.ny, dPar.nz, dPar.dx, dPar.dy,
           dPar.dz, dPar.t1, dPar.dt, dPar.B0, mPar.CS, mPar.alpha.flatten(),
-          mPar.M, mPar.P, aPar.R2step, aPar.nR2, aPar.iR2cand, aPar.nR2cand,
-          aPar.FibSearch, aPar.mu, aPar.nB0, aPar.nICMiter, aPar.maxICMupdate,
-          aPar.graphcutLevel, aPar.multiScale, rhoreal, rhoimag, R2map, B0map)
+          mPar.M, mPar.P, aPar.realEstimates, aPar.R2step, aPar.nR2,
+          aPar.iR2cand, aPar.nR2cand, aPar.FibSearch, aPar.mu, aPar.nB0,
+          aPar.nICMiter, aPar.maxICMupdate, aPar.graphcutLevel,
+          aPar.multiScale, rhoreal, rhoimag, R2map, B0map)
 
     rho = rhoreal + 1j * rhoimag
     rho.shape = (mPar.M, nVxl)

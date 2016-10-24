@@ -1,4 +1,4 @@
-*Copyright (c) 2016 Johan Berglund*  
+*Copyright (c) 2016 Johan Berglund*
 *FWQPBO is distributed under the terms of the GNU General Public License*
 
 *This program is free software: you can redistribute it and/or modify*
@@ -17,10 +17,10 @@
 ABOUT
 -------------------------------------------------------------------------------
 FQPBO is a command-line tool for MRI fat-water separation based on QPBO
-graph cuts. Input paramaters are provided by human readable configuration files. 
-See example configuration files provided with FWQPBO for details. The core 
-algorithm is implemented in c++ and compiled into a windows DLL file which is 
-called by a Python wrapper. 
+graph cuts. Input paramaters are provided by human readable configuration files.
+See example configuration files provided with FWQPBO for details. The core
+algorithm is implemented in c++ and compiled into a windows DLL file which is
+called by a Python wrapper.
 
 HOW TO USE
 -------------------------------------------------------------------------------
@@ -31,7 +31,7 @@ for ISMRM 2012 challenge from: http://challenge.ismrm.org/node/14)
 HOW TO CITE
 -------------------------------------------------------------------------------
 Berglund J and Skorpil M. *Multi-scale graph cut algorithm for efficient water-
-fat separation*. Accepted for publication in Magn Reson Med, 2016. 
+fat separation*. Magn Reson Med, 2016. [doi: 10.1002/mrm.26479]
 
 DEPENDENCIES
 -------------------------------------------------------------------------------
@@ -44,8 +44,8 @@ QPBO v1.4 by Vladimir Kolmogorov for the graph cuts
 
 CONTACT INFORMATION
 -------------------------------------------------------------------------------
-Johan Berglund, Ph.D.  
-Dept. of Medical Physics  
-Karolinska University Hospital,  
-Stockholm, Sweden  
+Johan Berglund, Ph.D.
+Dept. of Medical Physics
+Karolinska University Hospital,
+Stockholm, Sweden
 johan.berglund@karolinska.se

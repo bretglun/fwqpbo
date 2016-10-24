@@ -118,8 +118,15 @@ def save(outDir, image, dPar, seriesDescription, seriesNumber,
     for z, slice in enumerate(dPar.sliceList):
         filename = outDir+r'/{}.dcm'.format(slice)
         # Prepare pixel data; truncate and scale
+        if 'cropFOV' in dPar:
+            img = np.zeros((dPar.Ny, dPar.Nx))
+            x1, x2 = dPar.cropFOV[0], dPar.cropFOV[1]
+            y1, y2 = dPar.cropFOV[2], dPar.cropFOV[3]
+            img[y1:y2, x1:x2] = image[z, :, :]
+        else:
+            img = image[z, :, :]
         im = np.array([max(0, (val-reScaleIntercept)/reScaleSlope)
-                      for val in image[z, :, :].flatten()])
+                      for val in img.flatten()])
         im = im.astype('uint16')
         # Set window so that 95% of pixels are inside
         windowCenter, windowWidth = get95percentileWindow(
@@ -154,8 +161,8 @@ def save(outDir, image, dPar, seriesDescription, seriesNumber,
             ds.BitsAllocated = 16
             ds.SmallestImagePixelValue = '\\x00\\x00'
             ds.LargestImagePixelValue = '\\xff\\xff'
-            ds.Columns = dPar.nx
-            ds.Rows = dPar.ny
+            ds.Columns = img.shape[1]
+            ds.Rows = img.shape[0]
             setTagValue(ds, 'Study Instance UID',
                         getSOPInstanceUID(), iFrame, 'UI')
         # Change/add DICOM tags:
@@ -244,6 +251,8 @@ def getAttribute(ds, attr, frame=None):
         attribute = getTagValue(ds, 'Image Position (Patient)', frame)
         if attribute:
             attribute = attribute[2]
+    elif attr == 'Spacing Between Slices' and attribute is None:
+        attribute = getTagValue(ds, 'Slice Thickness', frame)
     elif attr == 'Image Type' and attribute:  # special handling of image type
         attribute = typeTag2type(attribute)
         if not attribute:
@@ -405,8 +414,8 @@ def updateDataParamsDICOM(dPar, files):
         dPar.echoes = range(dPar.totalN)
     echoTimes = [echoTimes[echo] for echo in dPar.echoes]
     dPar.N = len(dPar.echoes)
-    if dPar.N < 3:
-        raise Exception('At least 3 echoes required, only {} found'
+    if dPar.N < 2:
+        raise Exception('At least 2 echoes required, only {} given'
                         .format(dPar.N))
     dPar.t1 = echoTimes[0]
     dPar.dt = np.mean(np.diff(echoTimes))
@@ -422,6 +431,14 @@ def updateDataParamsDICOM(dPar, files):
     dPar.ny = frameList[0][7]
     dPar.nz = len(dPar.sliceList)
 
+    if 'cropFOV' in dPar:
+        x1, x2 = dPar.cropFOV[0], dPar.cropFOV[1]
+        y1, y2 = dPar.cropFOV[2], dPar.cropFOV[3]
+        dPar.Nx, dPar.nx = dPar.nx, x2-x1
+        dPar.Ny, dPar.ny = dPar.ny, y2-y1
+    else:
+        x1, x2 = 0, dPar.nx
+        y1, y2 = 0, dPar.ny
     img = []
     if multiframe:
         file = frameList[0][0]
@@ -433,8 +450,10 @@ def updateDataParamsDICOM(dPar, files):
                 magnFrame = i
                 phaseFrame = i+1
                 if multiframe:
-                    magn = dcm.pixel_array[frameList[magnFrame][1]].flatten()
-                    phase = dcm.pixel_array[frameList[phaseFrame][1]].flatten()
+                    magn = dcm.pixel_array[
+                        frameList[magnFrame][1]][y1:y2, x1:x2].flatten()
+                    phase = dcm.pixel_array[
+                        frameList[phaseFrame][1]][y1:y2, x1:x2].flatten()
                     # Abs val needed for Siemens data to get correct phase sign
                     reScaleIntercept = \
                         np.abs(getAttribute(dcm, 'Rescale Intercept',
@@ -444,8 +463,8 @@ def updateDataParamsDICOM(dPar, files):
                     phaseFile = frameList[phaseFrame][0]
                     mDcm = dicom.read_file(magnFile)
                     pDcm = dicom.read_file(phaseFile)
-                    magn = mDcm.pixel_array.flatten()
-                    phase = pDcm.pixel_array.flatten()
+                    magn = mDcm.pixel_array[y1:y2, x1:x2].flatten()
+                    phase = pDcm.pixel_array[y1:y2, x1:x2].flatten()
                     # Abs val needed for Siemens data to get correct phase sign
                     reScaleIntercept = np.abs(
                         getAttribute(pDcm, 'Rescale Intercept'))
@@ -460,9 +479,9 @@ def updateDataParamsDICOM(dPar, files):
                 imagFrame = i
                 if multiframe:
                     realPart = dcm.pixel_array[
-                        frameList[realFrame][1]].flatten()
+                        frameList[realFrame][1]][y1:y2, x1:x2].flatten()
                     imagPart = dcm.pixel_array[
-                        frameList[imagFrame][1]].flatten()
+                        frameList[imagFrame][1]][y1:y2, x1:x2].flatten()
                     # Assumes real and imaginary slope/intercept are equal
                     reScaleIntercept = getAttribute(
                         dcm, 'Rescale Intercept', frameList[realFrame][1])
@@ -473,8 +492,8 @@ def updateDataParamsDICOM(dPar, files):
                     imagFile = frameList[imagFrame][0]
                     rDcm = dicom.read_file(realFile)
                     iDcm = dicom.read_file(imagFile)
-                    realPart = rDcm.pixel_array.flatten()
-                    imagPart = iDcm.pixel_array.flatten()
+                    realPart = rDcm.pixel_array[y1:y2, x1:x2].flatten()
+                    imagPart = iDcm.pixel_array[y1:y2, x1:x2].flatten()
                     # Assumes real and imaginary slope/intercept are equal
                     reScaleIntercept = getAttribute(rDcm, 'Rescale Intercept')
                     reScaleSlope = getAttribute(rDcm, 'Rescale Slope')
@@ -533,9 +552,15 @@ def updateDataParamsMATLAB(dPar, file):
         img = img[:, :, :, :, dPar.echoes]
         echoTimes = echoTimes[dPar.echoes]
         dPar.N = len(dPar.echoes)
-    if dPar.N < 3:
+    if 'cropFOV' in dPar:
+        x1, x2 = dPar.cropFOV[0], dPar.cropFOV[1]
+        y1, y2 = dPar.cropFOV[2], dPar.cropFOV[3]
+        dPar.Nx, dPar.nx = dPar.nx, x2-x1
+        dPar.Ny, dPar.ny = dPar.ny, y2-y1
+        img = img[y1:y2, x1:x2, :]
+    if dPar.N < 2:
         raise Exception(
-            'At least 3 echoes required, only {} found'.format(dPar.N))
+            'At least 2 echoes required, only {} given'.format(dPar.N))
     dPar.t1 = echoTimes[0]
     dPar.dt = np.mean(np.diff(echoTimes))
     if np.max(np.diff(echoTimes))/dPar.dt > 1.05 or np.min(
@@ -589,8 +614,27 @@ def getFACalphas(CL=None, P2U=None, UD=None):
     return alpha
 
 
+# Convert string on form "0-3, 5, 8-22" to set of integers
+def readIntString(str):
+    ints = []
+    for word in [w.replace(' ', '') for w in str.split(',')]:
+        if word.isdigit():
+            ints.append(int(word))
+        elif '-' in word:
+            try:
+                digits = [int(d.replace(' ', '')) for d in word.split('-')]
+            except ValueError:
+                raise Exception('Unexpected integer string "{}"'.format(str))
+            if len(digits) > 2 or digits[0] > digits[1]:
+                raise Exception('Unexpected integer string "{}"'.format(str))
+            else:
+                for i in range(digits[0], digits[1]+1):
+                    ints.append(i)
+    return list(set(ints))
+
+
 # Update model parameter object mPar and set default parameters
-def updateModelParams(mPar):
+def updateModelParams(mPar, clockwisePrecession=False):
     if 'watcs' in mPar:
         watCS = [float(mPar.watcs)]
     else:
@@ -600,6 +644,8 @@ def updateModelParams(mPar):
     else:
         fatCS = [1.3]
     mPar.CS = np.array(watCS+fatCS, dtype=np.float32)
+    if clockwisePrecession:
+        mPar.CS *= -1
     mPar.P = len(mPar.CS)
     if 'nfac' in mPar:
         mPar.nFAC = int(mPar.nfac)
@@ -642,7 +688,7 @@ def updateModelParams(mPar):
 
 
 # Update algorithm parameter object aPar and set default parameters
-def updateAlgoParams(aPar):
+def updateAlgoParams(aPar, N):
     if 'nr2' in aPar:
         aPar.nR2 = int(aPar.nr2)
     else:
@@ -691,8 +737,16 @@ def updateAlgoParams(aPar):
         aPar.magnDiscr = True
     if 'realestimates' in aPar:
         aPar.realEstimates = aPar.realestimates == 'True'
+        if not aPar.realEstimates and N == 2:
+            raise Exception('Real-valued estimates needed for two-point Dixon')
+    elif N == 2:
+        aPar.realEstimates = True
     else:
         aPar.realEstimates = False
+    if 'offrespenalty' in aPar:
+        aPar.offresPenalty = float(aPar.offrespenalty)
+    else:
+        aPar.offresPenalty = 0
     if 'pythonfw' in aPar:
         aPar.pythonFW = aPar.pythonfw == 'True'
     else:
@@ -722,11 +776,19 @@ def updateDataParams(dPar, outDir=None):
     else:
         dPar.reScale = 1.0
     if 'echoes' in dPar:
-        dPar.echoes = [int(a) for a in dPar.echoes.split(',')]
+        dPar.echoes = readIntString(dPar.echoes)
     if 'slicelist' in dPar:
-        dPar.sliceList = [int(a) for a in dPar.slicelist.split(',')]
+        dPar.sliceList = readIntString(dPar.slicelist)
+    if 'cropfov' in dPar:
+        dPar.cropFOV = [int(x.replace(' ', '')) for x in dPar.cropfov.split(',')]
+    if 'reconslab' in dPar:
+        dPar.reconSlab = int(dPar.reconslab)
     if 'temp' in dPar:
         dPar.Temp = float(dPar.temp)
+    if 'clockwiseprecession' in dPar:
+        dPar.clockwisePrecession = dPar.clockwiseprecession == 'True'
+    else:
+        dPar.clockwisePrecession = False
     if 'files' in dPar:
         dPar.files = dPar.files.split(',')
         validFiles = getValidFiles(dPar['files'])
@@ -756,6 +818,33 @@ def getSliceDataParams(dPar, slice, z):
     return sliceDataParams
 
 
+# extract dPar object representing a slab of contiguous slices starting at z
+def getSlabDataParams(dPar, slices, z):
+    slabDataParams = AttrDict(dPar)
+    slabDataParams.sliceList = slices
+    slabSize = len(slices)
+    slabDataParams.img = dPar.img.reshape(
+        dPar.N, dPar.nz, dPar.ny*dPar.nx)[:, z:z+slabSize, :].flatten()
+    slabDataParams.nz = slabSize
+    return slabDataParams
+
+
+# group slices in sliceList in slabs of reconSlab contiguous slices
+def getSlabs(sliceList, reconSlab):
+    slabs = []
+    slices = []
+    pos = 0
+    for z, slice in enumerate(sliceList):
+        # start a new slab
+        if slices and (len(slices) == reconSlab or not slice == slices[-1]+1):
+            slabs.append((slices, pos))
+            slices = [slice]
+            pos = z
+        else:
+            slices.append(slice)
+    slabs.append((slices, pos))
+    return slabs
+
 # Get total fat component (for Fatty Acid Composition; trivial otherwise)
 def getFat(rho, nVxl, alpha):
     fat = np.zeros(nVxl)+1j*np.zeros(nVxl)
@@ -783,9 +872,11 @@ def reconstructAndSave(dPar, aPar, mPar):
 
     if mPar.nFAC > 0:  # For Fatty Acid Composition
         # First pass: use standard fat-water separation to determine B0 and R2*
-        mPar2 = AttrDict(mPar)  # modify modelParams for pass 1
-        mPar.alpha = getFACalphas(mPar.CL, mPar.P2U, mPar.UD)
-        mPar.M = mPar.alpha.shape[0]
+        mPar1 = AttrDict(mPar)  # modify modelParams for pass 1
+        mPar2 = AttrDict(mPar)  # modify modelParams for pass 2
+        mPar1.alpha = getFACalphas(mPar.CL, mPar.P2U, mPar.UD)
+        mPar1.M = mPar1.alpha.shape[0]
+        mPar = mPar1
     rho, B0map, R2map = reconstruct(dPar, aPar, mPar)
     eps = sys.float_info.epsilon
 
@@ -793,9 +884,7 @@ def reconstructAndSave(dPar, aPar, mPar):
     fat = getFat(rho, nVxl, mPar.alpha)
 
     if aPar.magnDiscr:  # to avoid bias from noise
-        ff = np.abs(fat/(wat+fat+eps))
-        wf = np.abs(wat/(wat+fat+eps))
-        ff[ff < .5] = 1.-wf[ff < .5]
+        ff = np.real(fat/(wat+fat+eps))
     else:
         ff = np.abs(fat)/(np.abs(wat)+np.abs(fat)+eps)
 
@@ -803,7 +892,6 @@ def reconstructAndSave(dPar, aPar, mPar):
         # Second pass: Re-calculate water and all fat components with
         # FAC using the B0- and R2*-map from first pass
         mPar = mPar2  # Reset modelParams
-
         aPar2 = AttrDict(aPar)  # modify algoParams for pass 2:
         aPar2.nR2 = -aPar.nR2  # to use provided R2star-map
         aPar2.nICMiter = 0  # to omit ICM
@@ -834,7 +922,7 @@ def reconstructAndSave(dPar, aPar, mPar):
     bff = True  # Fat fraction
     bB0map = True  # B0 off-resonance field map
 
-    shiftB0map = False  # Shift the B0-map with half a period
+    shiftB0map = True  # Shift the B0-map with half a period
     if shiftB0map:
         Omega = 1.0/dPar.dt/gyro/dPar.B0
         B0map += Omega/2
@@ -888,8 +976,8 @@ def FW(dataParamFile, algoParamFile, modelParamFile, outDir=None):
 
     # Self-update configuration objects
     updateDataParams(dPar, outDir)
-    updateAlgoParams(algoParams)
-    updateModelParams(modelParams)
+    updateAlgoParams(algoParams, dPar.N)
+    updateModelParams(modelParams, dPar.clockwisePrecession)
 
     print('B0 = {}'.format(round(dPar.B0, 2)))
     print('N = {}'.format(dPar.N))
@@ -901,7 +989,15 @@ def FW(dataParamFile, algoParamFile, modelParamFile, outDir=None):
 
     # Run fat/water processing
     if algoParams.use3D or len(dPar.sliceList) == 1:
-        reconstructAndSave(dPar, algoParams, modelParams)
+        if 'reconSlab' in dPar:
+            slabs = getSlabs(dPar.sliceList, dPar.reconSlab)
+            for iSlab, (slices, z) in enumerate(slabs):
+                print('Processing slab {}/{} (slices {}-{})...'
+                      .format(iSlab+1, len(slabs), slices[0]+1, slices[-1]+1))
+                slabDataParams = getSlabDataParams(dPar, slices, z)
+                reconstructAndSave(slabDataParams, algoParams, modelParams)
+        else:
+            reconstructAndSave(dPar, algoParams, modelParams)
     else:
         for z, slice in enumerate(dPar.sliceList):
             print('Processing slice {} ({}/{})...'

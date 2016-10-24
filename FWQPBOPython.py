@@ -2,9 +2,10 @@ import ctypes
 import numpy as np
 import sys
 import os
+from skimage.filters import threshold_otsu
 
 IMGTYPE = ctypes.c_float
-gyro = 42.58
+gyro = 42.576
 
 
 # Configure the QPBO graphcut function from the c++ DLL
@@ -59,6 +60,12 @@ def getR2Residuals(Y, dB0, C, nB0, nR2, nVxl, D=None):
             else:  # real-valued estimates
                 y = getRealDemodulated(Y[:, dB0 == b], D[r][b])[0]
             J[r, dB0 == b] = np.linalg.norm(np.dot(C[r][b], y), axis=0)**2
+    # TODO: remove debugging:
+    x, y = 52, 70
+    q = y*128+x
+    import matplotlib.pyplot as plt
+    plt.plot(J[:, q])
+    plt.show()
     return J
 
 
@@ -223,7 +230,7 @@ def getB0fromHighLevel(dB0high, level, high):
 
 
 def calculateFieldMap(nB0, level, graphcutLevel, multiScale, maxICMupdate,
-                      nICMiter, J, V, mu):
+                      nICMiter, J, V, mu, offresPenalty=0):
     A, B = findTwoSmallestMinima(J)
     dB0 = np.array(A)
 
@@ -237,19 +244,15 @@ def calculateFieldMap(nB0, level, graphcutLevel, multiScale, maxICMupdate,
         Jhigh = getHighLevelResidualImage(J, high, level)
         # Recursion:
         dB0high = calculateFieldMap(nB0, high, graphcutLevel, multiScale,
-                                    maxICMupdate, nICMiter, Jhigh, V, mu).\
-            reshape(high['nz'], high['ny'], high['nx'])
+                                    maxICMupdate, nICMiter, Jhigh, V, mu,
+                                    offresPenalty).reshape(
+                                    high['nz'], high['ny'], high['nx'])
         dB0 = getB0fromHighLevel(dB0high, level, high)
         print('Level ({},{},{}): '.format(
             level['nx'], level['ny'], level['nz']))
 
     # Prepare MRF
     print('Preparing MRF...', end='')
-
-    # Prepare data fidelity costs
-    D = np.array([J[A, range(J.shape[1])],
-                 J[B, range(J.shape[1])]], dtype=IMGTYPE)
-
     # Prepare discontinuity costs
     vxls = range(J.shape[1])
     # 2nd derivative of residual function
@@ -263,6 +266,23 @@ def calculateFieldMap(nB0, level, graphcutLevel, multiScale, maxICMupdate,
     wx = np.minimum(ddJ[left], ddJ[right])*mu/level['dx']
     wy = np.minimum(ddJ[down], ddJ[up])*mu/level['dy']
     wz = np.minimum(ddJ[below], ddJ[above])*mu/level['dz']
+
+    # Prepare data fidelity costs
+    # TODO: remove
+    import matplotlib.pyplot as plt
+    # plt.subplot(2, 1, 1)
+    # plt.plot(J.reshape(nB0, level['ny'], level['nx'])[:, level['ny']//2, level['nx']//2])
+    ###
+    if offresPenalty > 0:
+        for b in range(nB0):
+            J[b, :] += (1-np.cos(2*np.pi*b/nB0))/2*offresPenalty
+    # TODO: remove
+    # plt.subplot(2, 1, 2)
+    # plt.plot(J.reshape(nB0, level['ny'], level['nx'])[:, level['ny']//2, level['nx']//2])
+    plt.show()
+    ###
+    D = np.array([J[A, range(J.shape[1])],
+                 J[B, range(J.shape[1])]], dtype=IMGTYPE)
     print('DONE')
 
     # QPBO
@@ -290,7 +310,12 @@ def calculateFieldMap(nB0, level, graphcutLevel, multiScale, maxICMupdate,
         QPBOcpp = init_QPBOcpp()  # Initialize c++ function
         QPBOcpp(level['nx'], level['ny'], level['nz'], D, Vx, Vy, Vz, label)
         print('DONE')
-
+        # TODO: remove
+        if level['L'] < 3:
+            import matplotlib.pyplot as plt
+            # plt.imshow(label.reshape(level['ny'], level['nx']), vmin=-1, vmax=1)
+            # plt.show()
+        ###
         dB0[label == 0] = A[label == 0]
         dB0[label == 1] = B[label == 1]
 
@@ -316,8 +341,8 @@ def getPhi(Y, D):
 # Calculate phi, remove it from Y and return separate real and imag parts
 def getRealDemodulated(Y, D):
     phi = getPhi(Y, D)
-    Y /= np.exp(1j*phi)
-    return np.concatenate((np.real(Y), np.imag(Y))), phi
+    y = Y/np.exp(1j*phi)
+    return np.concatenate((np.real(y), np.imag(y))), phi
 
 
 # Calculate LS error J as function of B0
@@ -329,7 +354,7 @@ def getB0Residuals(Y, C, nB0, nVxl, iR2cand, D=None):
         if not D:  # complex-valued estimates
             y = Y
         else:  # real-valued estimates
-            y = getRealDemodulated(Y, D[r][b])[0]
+            y, phi = getRealDemodulated(Y, D[r][b])
         J[b, :] = np.linalg.norm(np.dot(C[iR2cand[r]][b], y), axis=0)**2
     return J
 
@@ -351,20 +376,20 @@ def modelMatrix(dPar, mPar, R2):
     RA = np.zeros(shape=(dPar.N, mPar.M))+1j*np.zeros(shape=(dPar.N, mPar.M))
     for n in range(dPar.N):
         t = dPar.t1+n*dPar.dt
-        RA[n, 0] = np.exp(complex(-t*R2, 0))  # Water resonance
+        RA[n, 0] = np.exp(complex(-(t-dPar.t1)*R2, 0))  # Water resonance
         for p in range(1, mPar.P):  # Loop over fat resonances
             # Chemical shift between water and peak m (in ppm)
             omega = 2.*np.pi*gyro*dPar.B0*(mPar.CS[p]-mPar.CS[0])
-            RA[n, 1] += mPar.alpha[1][p]*np.exp(complex(-t*R2, t*omega))
+            RA[n, 1] += mPar.alpha[1][p]*np.exp(complex(-(t-dPar.t1)*R2, t*omega))
     return RA
 
 
 # Get matrix Dtmp defined so that D = Bconj*Dtmp*Bh
 # Following Bydder et al. MRI 29 (2011): 216-221.
-def getDtmp(RA):
-    RAh = RA.conj().T
-    inv = np.linalg.inv(np.real(np.dot(RAh, RA)))
-    Dtmp = np.dot(RA.conj(), np.dot(inv, RAh))
+def getDtmp(A):
+    Ah = A.conj().T
+    inv = np.linalg.inv(np.real(np.dot(Ah, A)))
+    Dtmp = np.dot(A.conj(), np.dot(inv, Ah))
     return Dtmp
 
 
@@ -373,6 +398,13 @@ def realify(M):
     R = np.real(M)
     I = np.imag(M)
     return np.concatenate((np.concatenate((R, I)), np.concatenate((-I, R))), 1)
+
+
+# Get mean square signal magnitude within foreground
+def getMeanEnergy(Y):
+    energy = np.linalg.norm(Y, axis=0)**2
+    thres = threshold_otsu(energy)
+    return np.mean(energy[energy >= thres])
 
 
 # Perform the actual reconstruction
@@ -391,7 +423,7 @@ def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
     # Prepare matrices
     # Off-resonance modulation vectors (one for each off-resonance value)
     B, Bh = modulationVectors(aPar.nB0, dPar.N)
-    RA, RAp, C, Mp = [], [], [], []
+    RA, RAp, C, Qp = [], [], [], []
     D = None
     if aPar.realEstimates:
         D = []  # Matrix for calculating phi (needed for real-valued estimates)
@@ -401,20 +433,23 @@ def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
         if aPar.realEstimates:
             D.append([])
             Dtmp = getDtmp(RA[r])
+            for b in range(aPar.nB0):
+                D[r].append(np.dot(B[b].conj(), np.dot(Dtmp, Bh[b])))
             RA[r] = np.concatenate((np.real(RA[r]), np.imag(RA[r])))
         RAp.append(np.linalg.pinv(RA[r]))
-        # Null space projection matrices
-        proj = np.eye(dPar.N*(1+aPar.realEstimates))-np.dot(RA[r], RAp[r])
 
-        C.append([])
-        Mp.append([])
+    if aPar.realEstimates:
         for b in range(aPar.nB0):
-            if aPar.realEstimates:
-                D[r].append(np.dot(B[b].conj(), np.dot(Dtmp, Bh[b])))
-                B[b] = realify(B[b])
-                Bh[b] = realify(Bh[b])
+            B[b] = realify(B[b])
+            Bh[b] = realify(Bh[b])
+    for r in range(nR2):
+        C.append([])
+        Qp.append([])
+        # Null space projection matrix
+        proj = np.eye(dPar.N*(1+aPar.realEstimates))-np.dot(RA[r], RAp[r])
+        for b in range(aPar.nB0):
             C[r].append(np.dot(np.dot(B[b], proj), Bh[b]))
-            Mp[r].append(np.dot(RAp[r], Bh[b]))
+            Qp[r].append(np.dot(RAp[r], Bh[b]))
 
     # For B0 index -> off-resonance in ppm
     B0step = 1.0/aPar.nB0/dPar.dt/gyro/dPar.B0
@@ -428,9 +463,14 @@ def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
                  'sx': 1, 'sy': 1, 'sz': 1,
                  'dx': dPar.dx, 'dy': dPar.dy, 'dz': dPar.dz}
         J = getB0Residuals(Y, C, aPar.nB0, nVxl, aPar.iR2cand, D)
+        offresPenalty = aPar.offresPenalty
+        if aPar.offresPenalty > 0:
+            offresPenalty *= getMeanEnergy(Y)
+
         dB0 = calculateFieldMap(aPar.nB0, level, aPar.graphcutLevel,
                                 aPar.multiScale, aPar.maxICMupdate,
-                                aPar.nICMiter, J, V, aPar.mu)
+                                aPar.nICMiter, J, V, aPar.mu,
+                                offresPenalty)
     elif B0map is None:
         dB0 = np.zeros(nVxl, dtype=int)
     else:
@@ -449,7 +489,7 @@ def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
                 y = Y[:, vxls]
             else:  # real-valued estimates
                 y, phi = getRealDemodulated(Y[:, vxls], D[r][b])
-            rho[:, vxls] = np.dot(Mp[r][b], y)
+            rho[:, vxls] = np.dot(Qp[r][b], y)
             if D:
                 #  Assert phi is the phase angle of water
                 phi[rho[0, vxls] < 0] += np.pi

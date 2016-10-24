@@ -10,6 +10,9 @@ using Eigen::MatrixXcf;
 using Eigen::VectorXcf;
 using Eigen::MatrixXcd;
 using Eigen::VectorXcd;
+using Eigen::MatrixXf;
+using Eigen::VectorXf;
+using Eigen::Matrix;
 
 #include "image.h"
 #include "QPBO-v1.4.src/QPBO.h"
@@ -63,9 +66,30 @@ vector<MatrixXcf> decayMatrices(int nR2, float R2step, int N, float t1, float dt
 	return R;
 }
 
-MatrixXcf pseudoinverse(MatrixXcf A) {
-	MatrixXcf AtA = A.adjoint()*A;
-	MatrixXcf Ap=AtA.inverse()*A.adjoint();
+// TODO: remove these
+void printMatrix(MatrixXcf M, string name) {
+    cout << name << ": (" << M.rows() << "," << M.cols() << ")" << endl;
+}
+void printMatrix(MatrixXf M, string name) {
+    cout << name << ": (" << M.rows() << "," << M.cols() << ")" << endl;
+}
+
+MatrixXcf pseudoinverse(MatrixXcf A, bool realEstimates=false) {
+	MatrixXcf Ap;
+	if (realEstimates) {
+	    Ap = MatrixXcf(A.cols(), A.rows());
+        MatrixXf Ar(2*A.rows(), A.cols());
+        Ar << A.real(), A.imag();
+        MatrixXf AtA = Ar.transpose()*Ar;
+        MatrixXf pinv = AtA.inverse()*Ar.transpose();
+        // Store real-valued pseudoinverse as complex matrix
+        Ap.real() = pinv.block(0,0,A.cols(),A.rows());
+        Ap.imag() = pinv.block(0,A.rows(),A.cols(),A.rows());
+    }
+    else {
+        MatrixXcf AtA = A.adjoint()*A;
+        Ap=AtA.inverse()*A.adjoint();
+	}
 	return Ap;
 }
 
@@ -87,11 +111,30 @@ void createEchoImages(image<VectorXcf>* S,const IMGTYPE* re,const IMGTYPE* im,in
 	}
 }
 
-RESIDUALTYPE residual(VectorXcf &Cvec, VectorXcf &Svec) {
+
+// For real-valued estimates
+RESIDUALTYPE residual(VectorXcf &Cvec, VectorXf Svec) {
+    RESIDUALTYPE res = 0;
+    for (int k=0; k<Cvec.size(); k++) res+=real(Cvec(k))*Svec(k);
+    return res;
+}
+
+// For complex-valued estimates
+RESIDUALTYPE residual(VectorXcf &Cvec, VectorXcf Svec) {
     RESIDUALTYPE res = 0;
     for (int k=0; k<Cvec.size(); k++) res+=real(Cvec(k)*Svec(k));
     return res;
 }
+
+/*
+template <typename T>
+RESIDUALTYPE residual(const Eigen::MatrixBase<T>& Cvec, Eigen::MatrixBase<T>& Svec) {
+    RESIDUALTYPE res = 0;
+    for (int k=0; k<Cvec.size(); k++) res+=real(Cvec(k)*Svec(k));
+    return res;
+    //mat2 = coefficient * mat1.template cast <typename Derived2::Scalar> ();
+}
+*/
 
 // Progressbar: progress is i out of n
 static inline void progressBar(int i, int n)
@@ -101,21 +144,153 @@ static inline void progressBar(int i, int n)
 	cout.flush();
 }
 
+// For complex-valued estimates
+VectorXcf getShSasVector(VectorXcf s, int N, vector<vector<int> > lowTriInd) {
+    VectorXcf Svec = VectorXcf((N+1)*N/2);
+    for (int m=0; m<N; m++)
+        for (int n=0; n<=m; n++)
+            Svec(lowTriInd[m][n]) = conj(s(m))*s(n);
+    return Svec;
+}
+
+// For real-valued estimates
+VectorXf getShSasVector(VectorXf s, int N, vector<vector<int> > lowTriInd) {
+    VectorXf Svec = VectorXf((N+1)*N/2);
+    for (int m=0; m<N; m++)
+        for (int n=0; n<=m; n++)
+            Svec(lowTriInd[m][n]) = s(m)*s(n);
+    return Svec;
+}
+
+// Get matrix Dtmp defined so that D = Bconj*Dtmp*Bh
+// Following Bydder et al. MRI 29 (2011): 216-221.
+MatrixXcf getDtmp(MatrixXcf A) {
+    MatrixXcf Ah = A.adjoint();
+    MatrixXf inv = (Ah*A).real().inverse();
+    MatrixXcf Dtmp = A.conjugate()*inv*Ah;
+    return Dtmp;
+ }
+
+
+ MatrixXcf getProjectionMatrix(MatrixXcf A, MatrixXcf Ap, bool realEstimates) {
+    int N = A.rows();
+    if (realEstimates) {
+        MatrixXcf proj = MatrixXcf::Identity(2*N,2*N);
+        proj.real().block(0,0,N,N) -= A.real()*Ap.real();
+        proj.real().block(N,0,N,N) -= A.imag()*Ap.real();
+        proj.real().block(0,N,N,N) -= A.real()*Ap.imag();
+        proj.real().block(N,N,N,N) -= A.imag()*Ap.imag();
+        return proj;
+    }
+    else {
+        MatrixXcf proj = MatrixXcf::Identity(N,N)-A*Ap;
+        return proj;
+    }
+ }
+
+ MatrixXcf getQp(MatrixXcf A, MatrixXcf B, bool realEstimates=false) {
+    if (realEstimates) {
+        MatrixXcf Qp = MatrixXcf(A);
+        Qp.real() = A.real()*B.real()+A.imag()*B.imag();
+        Qp.imag() = A.imag()*B.real()-A.real()*B.imag();
+        return Qp;
+    }
+    else
+        return A*B;
+}
+
+ MatrixXcf getC(MatrixXcf B, MatrixXcf proj, bool realEstimates=false) {
+    if (realEstimates) {
+        int N = B.rows();
+        MatrixXf Br = MatrixXf(2*N,2*N);
+        Br.block(0,0,N,N) = B.real();
+        Br.block(N,0,N,N) = B.imag();
+        Br.block(0,N,N,N) = -B.imag();
+        Br.block(N,N,N,N) = B.real();
+        MatrixXcf C = MatrixXcf(2*N,2*N);
+        // Store real-valued C as real part in complex matrix
+        C.real() = Br*proj.real()*Br.transpose();
+        return C;
+    }
+    else
+        return B*proj*B.adjoint();
+}
+
+
+VectorXcf getLoTriVector(MatrixXcf M, vector<vector<int> > lowTriInd, int vecLen) {
+    int N = M.cols();
+    VectorXcf v = VectorXcf(vecLen);
+    for (int m=0; m<N; m++)
+        for (int n=0; n<=m; n++) {
+            if (m==n) v(lowTriInd[m][n]) = M(m,n);
+            else v(lowTriInd[m][n]) = complex<float>(2,0)*M(m,n); // Factor 2 for lower triangular entries for efficient multiplication utilizing Hermitean symmetry
+        }
+    return v;
+}
+
+// Calculate initial phase phi according to
+// Bydder et al. MRI 29 (2011): 216-221.
+float getPhi(VectorXcf y, MatrixXcf D) {
+    complex<float> tmp = y.transpose()*D*y;
+    float angle = arg(tmp);
+    float phi = 0.5*angle;
+    return phi;
+}
+
+/*
+MatrixXf separateRI(MatrixXcf M) {
+    MatrixXf sep(2*M.rows(), M.cols());
+    sep << M.real(), M.imag();
+}
+*/
+
+// Calculate phi, remove it from Y and return separate real and imag parts
+VectorXf getRealDemodulated(VectorXcf Y, MatrixXcf D, float& phi) {
+    phi = getPhi(Y, D);
+    Y /= exp(complex<float>(0,phi));
+    int N = Y.size();
+    VectorXf y(2*N);
+    // TODO: use separateRI
+    for (int n=0; n<N; n++) {
+        y[n]=real(Y(n));
+        y[n+N]=imag(Y(n));
+    }
+    return y;
+}
+
+// Overload function
+VectorXf getRealDemodulated(VectorXcf Y, MatrixXcf D) {
+    float phi;
+    return getRealDemodulated(Y, D, phi);
+}
+
 void getResidualImages(image<vector<RESIDUALTYPE> >* J,image<VectorXcf>* S,vector<vector<VectorXcf> > Cvec,vector<vector<int> > lowTriInd,int N,int nB0,int* iR2cand,int nR2cand,int nVxl) {
     vector<RESIDUALTYPE> res(nB0);
-    VectorXcf Svec = VectorXcf(Cvec.size());
     for (int i=0; i<nVxl; i++) {
         progressBar(i,nVxl);
-        VectorXcf s = S->get(i);
-        for (int m=0; m<N; m++)
-            for (int n=0; n<=m; n++)
-                Svec(lowTriInd[m][n]) = conj(s(m))*s(n);
-        // Calculate residual for each label
+        VectorXcf Svec = getShSasVector(S->get(i), N, lowTriInd);
+        // Calculate residual for each label b
         for (int b=0; b<nB0; b++) {
-            res[b] = residual(Cvec[b][iR2cand[0]],Svec);
-            for (int r=1; r<nR2cand; r++) { // Loop over R2* candidates
+            for (int r=0; r<nR2cand; r++) { // Minimize over R2*
                 RESIDUALTYPE val = residual(Cvec[b][iR2cand[r]],Svec);
-                if (val<res[b]) res[b] = val;
+                if (r==0 || val<res[b]) res[b] = val;
+            }
+        }
+        J->set(i,res);
+    }
+}
+
+// For real-valued estimates
+void getResidualImages(image<vector<RESIDUALTYPE> >* J,vector<vector<MatrixXcf> > D,image<VectorXcf>* S,vector<vector<VectorXcf> > Cvec,vector<vector<int> > lowTriInd,int N,int nB0,int* iR2cand,int nR2cand,int nVxl) {
+    vector<RESIDUALTYPE> res(nB0);
+    for (int i=0; i<nVxl; i++) {
+        progressBar(i,nVxl);
+        // Calculate residual for each label b
+        for (int b=0; b<nB0; b++) {
+            for (int r=0; r<nR2cand; r++) { // Minimize over R2*
+                VectorXf Svec = getShSasVector(getRealDemodulated(S->get(i),D[b][iR2cand[r]]), 2*N, lowTriInd);
+                RESIDUALTYPE val = residual(Cvec[b][iR2cand[r]],Svec);
+                if (r==0 || val<res[b]) res[b] = val;
             }
         }
         J->set(i,res);
@@ -172,6 +347,22 @@ void findTwoSsmallestMinima(image<vector<RESIDUALTYPE> >* J, image<int>* min1, i
 	}
 }
 
+// Exhaustive (brute force) search in interval [0,nR2-1]. Version for real-valued estimates
+unsigned int ExhaustiveSearch(vector<MatrixXcf> D, VectorXcf s, vector<VectorXcf> Cvec, int nR2, int N, vector<vector<int> > lowTriInd) {
+	unsigned int best = 0;
+	RESIDUALTYPE value;
+	RESIDUALTYPE min_value = residual(Cvec[0],getShSasVector(getRealDemodulated(s,D[0]),2*N,lowTriInd));
+	for (int r=1; r<nR2; r++) {
+		value = residual(Cvec[r],getShSasVector(getRealDemodulated(s,D[r]),2*N,lowTriInd));
+		if (value<min_value) {
+			min_value = value;
+			best = r;
+		}
+	}
+	return best;
+}
+
+
 // Exhaustive (brute force) search in interval [0,nR2-1]
 unsigned int ExhaustiveSearch(VectorXcf s, vector<VectorXcf> Cvec, int nR2, int N, vector<vector<int> > lowTriInd) {
     VectorXcf Svec = VectorXcf(Cvec.size());
@@ -190,6 +381,48 @@ unsigned int ExhaustiveSearch(VectorXcf s, vector<VectorXcf> Cvec, int nR2, int 
 		}
 	}
 	return best;
+}
+
+// Fibonacci search in interval [0,N-1]. Expects N>2. Version for real-valued estimates
+unsigned int FibonacciSearch(vector<MatrixXcf> D, VectorXcf s, vector<VectorXcf> Cvec, int nR2, int N, vector<vector<int> > lowTriInd) {
+	unsigned int Fib_index;
+	unsigned int* Fib = get_Fibonacci_sequence_with_final_number(nR2-1, Fib_index);
+	unsigned int i = Fib_index-1;
+	unsigned int a = 0;
+	unsigned int x1 = Fib[i-1];
+	unsigned int x2 = Fib[i];
+	unsigned int b = Fib[i+1];
+	RESIDUALTYPE fa = residual(Cvec[a],getShSasVector(getRealDemodulated(s,D[a]),2*N,lowTriInd));
+	RESIDUALTYPE fx1 = residual(Cvec[x1],getShSasVector(getRealDemodulated(s,D[x1]),2*N,lowTriInd));
+	RESIDUALTYPE fx2 = residual(Cvec[x2],getShSasVector(getRealDemodulated(s,D[x2]),2*N,lowTriInd));
+	RESIDUALTYPE fb = residual(Cvec[b],getShSasVector(getRealDemodulated(s,D[b]),2*N,lowTriInd));
+	while ( i > 0 )
+		if (fx1 > fx2) {
+			a = x1;
+			fa = fx1;
+			x1 = x2;
+			fx1 = fx2;
+			if ( --i < 2 ) {
+				if (fa<=fx1) return a;
+				else if (fx1<=fb) return x1;
+				else return b;
+			}
+			x2 = a + Fib[i];
+			fx2 = residual(Cvec[x2],getShSasVector(getRealDemodulated(s,D[x2]),2*N,lowTriInd));
+		} else {
+			b = x2;
+			fb = fx2;
+			x2 = x1;
+			fx2 = fx1;
+			if ( --i < 2 ) {
+				if (fa<=fx2) return a;
+				else if (fx2<=fb) return x2;
+				else return b;
+			}
+			x1 = a + Fib[i - 1];
+			fx1 = residual(Cvec[x1],getShSasVector(getRealDemodulated(s,D[x1]),2*N,lowTriInd));
+		}
+	return 0;
 }
 
 // Fibonacci search in interval [0,N-1]. Expects N>2
@@ -616,7 +849,7 @@ __declspec(dllexport) void __cdecl gc(int nx, int ny, int nz, const float* D, co
 	return;
 }
 
-__declspec(dllexport) void __cdecl fwqpbo(const IMGTYPE* Yreal,const IMGTYPE* Yimag,int N,int nx,int ny,int nz,float dx,float dy,float dz,float t1,float dt,float B0,float* CS,float* alpha,int M,int P,float R2step,int nR2,int* iR2cand,int nR2cand,bool FibSearch,float mu,int nB0,int nICMiter,int maxICMupdate,int graphcutLevel,bool multiScale,IMGTYPE* Xreal,IMGTYPE* Ximag,IMGTYPE* R2map,IMGTYPE* B0map)
+__declspec(dllexport) void __cdecl fwqpbo(const IMGTYPE* Yreal,const IMGTYPE* Yimag,int N,int nx,int ny,int nz,float dx,float dy,float dz,float t1,float dt,float B0,float* CS,float* alpha,int M,int P,bool realEstimates,float R2step,int nR2,int* iR2cand,int nR2cand,bool FibSearch,float mu,int nB0,int nICMiter,int maxICMupdate,int graphcutLevel,bool multiScale,IMGTYPE* Xreal,IMGTYPE* Ximag,IMGTYPE* R2map,IMGTYPE* B0map)
 {
 	// ---------- PREPARE AND PRECALCULATE ---------- //
 	cout << "Preparations and precalculations...";
@@ -628,10 +861,11 @@ __declspec(dllexport) void __cdecl fwqpbo(const IMGTYPE* Yreal,const IMGTYPE* Yi
 	if (FibSearch && determineR2) nR2 = get_nearest_higher_Fibonacci_number(nR2-1)+1; // Adjust nR2 to Fib. number+1 if needed
 	for (int r=0; r<nR2cand; r++) if (iR2cand[r]<0 or iR2cand[r]>nR2-1) throw runtime_error("R2 candidate index out of range");
 
-	// Precalculate lower triangular indices
-    vector<vector<int> > lowTriInd(N,vector<int>(N));
-    for (int m=0; m<N; m++) for (int n=0; n<=m; n++) lowTriInd[m][n] = (m+1)*m/2+n;
+	// Precalculate lower triangular indices, to represent lower triangular matrix as a vector for speed
+    vector<vector<int> > lowTriInd(2*N,vector<int>(2*N));
+    for (int m=0; m<2*N; m++) for (int n=0; n<=m; n++) lowTriInd[m][n] = (m+1)*m/2+n;
     int vecLen = (N+1)*N/2; // Length of matrices on "lower triangular vector form"
+    if (realEstimates) vecLen = (2*N+1)*N;
 
 	image<VectorXcf>* S = new image<VectorXcf>(nx,ny,nz);
 	createEchoImages(S,Yreal,Yimag,N,nx,ny,nz); 			    // Put raw data into complex vector image
@@ -640,23 +874,31 @@ __declspec(dllexport) void __cdecl fwqpbo(const IMGTYPE* Yreal,const IMGTYPE* Yi
 	vector<MatrixXcf> R = decayMatrices(nR2, R2step, N, t1, dt);// R2* decay matrices
     vector<MatrixXcf> B = modulationMatrices(nB0, N);           // B0 off-resonance modulation matrices
 
+    vector<MatrixXcf> RA(nR2);                                  // RA = R*A
+	vector<MatrixXcf> RAp(nR2);                                 // Pseudoinverse of RA
+	vector<vector<MatrixXcf> > D;                               // Matrix for calculating phi (for real-valued estimates)
+    if (realEstimates) D = vector<vector<MatrixXcf> >(nB0, vector<MatrixXcf>(nR2));
+    for (int r=0; r<nR2; r++) {
+        RA[r] = R[r]*A;
+        if (realEstimates) {
+            MatrixXcf Dtmp = getDtmp(RA[r]);
+            for (int b=0; b<nB0; b++)
+                D[b][r] = B[b].conjugate()*Dtmp*B[b].adjoint();
+        }
+        RAp[r] = pseudoinverse(RA[r], realEstimates);
+    }
+
     vector<vector<MatrixXcf> > Qp(nB0, vector<MatrixXcf>(nR2)); // Pseudoinverses of Q=B*R*A
     vector<vector<MatrixXcf> > C(nB0, vector<MatrixXcf>(nR2));  // Null space projection matrices
     vector<vector<VectorXcf> > Cvec(nB0, vector<VectorXcf>(nR2));// Vector representation of C for efficient residual calculation
-
-    for (int b=0; b<nB0; b++)
-        for (int r=0; r<nR2; r++) {
-            MatrixXcf Q = B[b]*R[r]*A;
-            Qp[b][r] = pseudoinverse(Q);
-            C[b][r]=MatrixXcf::Identity(N,N)-Q*Qp[b][r];
-
-            Cvec[b][r]=VectorXcf(vecLen);
-            for (int m=0; m<N; m++)
-                for (int n=0; n<=m; n++) {
-                    if (m==n) Cvec[b][r](lowTriInd[m][n]) = C[b][r](m,n);
-                    else Cvec[b][r](lowTriInd[m][n]) = complex<float>(2,0)*C[b][r](m,n); // Factor 2 for lower triangular entries for efficient multiplication utilizing Hermitean symmetry
-                }
+    for (int r=0; r<nR2; r++) {
+        MatrixXcf proj = getProjectionMatrix(RA[r], RAp[r], realEstimates);
+        for (int b=0; b<nB0; b++) {
+            Qp[b][r] = getQp(RAp[r],B[b].adjoint(),realEstimates);
+            C[b][r] = getC(B[b],proj,realEstimates);
+            Cvec[b][r]=getLoTriVector(C[b][r],lowTriInd,vecLen);
         }
+    }
 
 	vector<float> V(nB0); //Precalculate discontinuity costs
 	// NOTE: No multiplication of square(steplength) since no division of square(steplength) in ddJ (J'')
@@ -671,8 +913,10 @@ __declspec(dllexport) void __cdecl fwqpbo(const IMGTYPE* Yreal,const IMGTYPE* Yi
         cout << "Residual calculations..." << endl;
 
         image<vector<RESIDUALTYPE> >* J = new image<vector<RESIDUALTYPE> >(nx,ny,nz); // Residual image
-        getResidualImages(J,S,Cvec,lowTriInd,N,nB0,iR2cand,nR2cand,nx*ny*nz);
-
+        if (realEstimates)
+            getResidualImages(J,D,S,Cvec,lowTriInd,N,nB0,iR2cand,nR2cand,nx*ny*nz);
+        else
+            getResidualImages(J,S,Cvec,lowTriInd,N,nB0,iR2cand,nR2cand,nx*ny*nz);
         cout << "DONE" << endl;
 
         // ---------- CALCULATE B0 FIELD MAP ---------- //
@@ -701,8 +945,18 @@ __declspec(dllexport) void __cdecl fwqpbo(const IMGTYPE* Yreal,const IMGTYPE* Yi
 		for (int i=0; i<nx*ny*nz; i++) {
 			if (nR2==1) R2->set(i,0);
 			else {
-				if (FibSearch && nR2>2) R2->set(i,FibonacciSearch(S->get(i), Cvec[dB0->get(i)], nR2, N, lowTriInd));
-				else R2->set(i,ExhaustiveSearch(S->get(i), Cvec[dB0->get(i)], nR2, N, lowTriInd));
+				if (FibSearch && nR2>2) {
+                    if (realEstimates)
+                        R2->set(i,FibonacciSearch(D[dB0->get(i)], S->get(i), Cvec[dB0->get(i)], nR2, N, lowTriInd));
+                    else
+                        R2->set(i,FibonacciSearch(S->get(i), Cvec[dB0->get(i)], nR2, N, lowTriInd));
+				}
+				else {
+                    if (realEstimates)
+                        R2->set(i,ExhaustiveSearch(D[dB0->get(i)], S->get(i), Cvec[dB0->get(i)], nR2, N, lowTriInd));
+                    else
+                        R2->set(i,ExhaustiveSearch(S->get(i), Cvec[dB0->get(i)], nR2, N, lowTriInd));
+                }
 			}
 		}
 		cout << "DONE" << endl;
@@ -724,7 +978,21 @@ __declspec(dllexport) void __cdecl fwqpbo(const IMGTYPE* Yreal,const IMGTYPE* Yi
             else iR2 = int(R2map[i]/R2step);
 		}
 		else iR2 = 0;
-        VectorXcf X = Qp[iB0][iR2]*S->get(i);
+        VectorXcf X;
+        if (realEstimates) {
+            float phi;
+            VectorXf sr = getRealDemodulated(S->get(i),D[iB0][iR2],phi);
+            MatrixXf Qpr = MatrixXf(M,N*2);
+            Qpr << Qp[iB0][iR2].real(), Qp[iB0][iR2].imag();
+            VectorXf x = Qpr*sr;
+            X = VectorXcf::Zero(M);
+            X.real() = x;
+            // Assert phi is the phase angle of water
+            if (x(0)<0) phi+=PI;
+            X *= exp(complex<float>(0,phi));
+        }
+        else
+            X = Qp[iB0][iR2]*S->get(i);
         for (int m=0; m<M; m++) {
             Xreal[i+m*nx*ny*nz]=IMGTYPE(real(X[m]));
             Ximag[i+m*nx*ny*nz]=IMGTYPE(imag(X[m]));
