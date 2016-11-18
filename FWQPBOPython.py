@@ -224,7 +224,7 @@ def getB0fromHighLevel(dB0high, level, high):
 
 
 def calculateFieldMap(nB0, level, graphcutLevel, multiScale, maxICMupdate,
-                      nICMiter, J, V, mu, offresPenalty=0):
+                      nICMiter, J, V, mu, offresPenalty=0, offresCenter=0):
     A, B = findTwoSmallestMinima(J)
     dB0 = np.array(A)
 
@@ -239,7 +239,7 @@ def calculateFieldMap(nB0, level, graphcutLevel, multiScale, maxICMupdate,
         # Recursion:
         dB0high = calculateFieldMap(nB0, high, graphcutLevel, multiScale,
                                     maxICMupdate, nICMiter, Jhigh, V, mu,
-                                    offresPenalty).reshape(
+                                    offresPenalty, offresCenter).reshape(
                                     high['nz'], high['ny'], high['nx'])
         dB0 = getB0fromHighLevel(dB0high, level, high)
         print('Level ({},{},{}): '.format(
@@ -262,12 +262,14 @@ def calculateFieldMap(nB0, level, graphcutLevel, multiScale, maxICMupdate,
     wz = np.minimum(ddJ[below], ddJ[above])*mu/level['dz']
 
     # Prepare data fidelity costs
+    OP = np.zeros(J.shape)
     if offresPenalty > 0:
         for b in range(nB0):
-            J[b, :] += (1-np.cos(2*np.pi*b/nB0))/2*offresPenalty
+            OP[b, :] = (1-np.cos(2*np.pi*(b-offresCenter)/nB0))/2*offresPenalty
 
-    D = np.array([J[A, range(J.shape[1])],
-                 J[B, range(J.shape[1])]], dtype=IMGTYPE)
+    D = np.array([J[A, range(J.shape[1])] + OP[A, range(OP.shape[1])],
+                 J[B, range(J.shape[1])] + OP[B, range(OP.shape[1])]],
+                 dtype=IMGTYPE)
     print('DONE')
 
     # QPBO
@@ -450,7 +452,7 @@ def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
         dB0 = calculateFieldMap(aPar.nB0, level, aPar.graphcutLevel,
                                 aPar.multiScale, aPar.maxICMupdate,
                                 aPar.nICMiter, J, V, aPar.mu,
-                                offresPenalty)
+                                offresPenalty, int(dPar.offresCenter/B0step))
     elif B0map is None:
         dB0 = np.zeros(nVxl, dtype=int)
     else:

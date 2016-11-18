@@ -720,9 +720,14 @@ def updateAlgoParams(aPar, N):
     if 'graphcut' in aPar:
         aPar.graphcut = aPar.graphcut == 'True'
     else:
-        aPar.graphcut = False
-    # Set graphcutlevel to 0 (cut) or 100 (no cut)
-    aPar.graphcutLevel = 100*(not aPar.graphcut)
+        aPar.graphcut = 'graphcutlevel' in aPar
+    if aPar.graphcut:
+        if 'graphcutlevel' in aPar:
+            aPar.graphcutLevel = int(aPar.graphcutlevel)
+        else:
+            aPar.graphcutLevel = 0
+    else:
+        aPar.graphcutLevel = 100  # gcLevel>20 means no cut
     if 'multiscale' in aPar:
         aPar.multiScale = aPar.multiscale == 'True'
     else:
@@ -789,6 +794,10 @@ def updateDataParams(dPar, outDir=None):
         dPar.clockwisePrecession = dPar.clockwiseprecession == 'True'
     else:
         dPar.clockwisePrecession = False
+    if 'offrescenter' in dPar:
+        dPar.offresCenter = float(dPar.offrescenter)
+    else:
+        dPar.offresCenter = 0.
     if 'files' in dPar:
         dPar.files = dPar.files.split(',')
         validFiles = getValidFiles(dPar['files'])
