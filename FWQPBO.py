@@ -922,7 +922,7 @@ def reconstructAndSave(dPar, aPar, mPar):
     bff = True  # Fat fraction
     bB0map = True  # B0 off-resonance field map
 
-    shiftB0map = True  # Shift the B0-map with half a period
+    shiftB0map = False  # Shift the B0-map with half a period
     if shiftB0map:
         Omega = 1.0/dPar.dt/gyro/dPar.B0
         B0map += Omega/2

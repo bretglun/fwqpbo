@@ -60,12 +60,6 @@ def getR2Residuals(Y, dB0, C, nB0, nR2, nVxl, D=None):
             else:  # real-valued estimates
                 y = getRealDemodulated(Y[:, dB0 == b], D[r][b])[0]
             J[r, dB0 == b] = np.linalg.norm(np.dot(C[r][b], y), axis=0)**2
-    # TODO: remove debugging:
-    x, y = 52, 70
-    q = y*128+x
-    import matplotlib.pyplot as plt
-    plt.plot(J[:, q])
-    plt.show()
     return J
 
 
@@ -268,19 +262,10 @@ def calculateFieldMap(nB0, level, graphcutLevel, multiScale, maxICMupdate,
     wz = np.minimum(ddJ[below], ddJ[above])*mu/level['dz']
 
     # Prepare data fidelity costs
-    # TODO: remove
-    import matplotlib.pyplot as plt
-    # plt.subplot(2, 1, 1)
-    # plt.plot(J.reshape(nB0, level['ny'], level['nx'])[:, level['ny']//2, level['nx']//2])
-    ###
     if offresPenalty > 0:
         for b in range(nB0):
             J[b, :] += (1-np.cos(2*np.pi*b/nB0))/2*offresPenalty
-    # TODO: remove
-    # plt.subplot(2, 1, 2)
-    # plt.plot(J.reshape(nB0, level['ny'], level['nx'])[:, level['ny']//2, level['nx']//2])
-    plt.show()
-    ###
+
     D = np.array([J[A, range(J.shape[1])],
                  J[B, range(J.shape[1])]], dtype=IMGTYPE)
     print('DONE')
@@ -310,12 +295,7 @@ def calculateFieldMap(nB0, level, graphcutLevel, multiScale, maxICMupdate,
         QPBOcpp = init_QPBOcpp()  # Initialize c++ function
         QPBOcpp(level['nx'], level['ny'], level['nz'], D, Vx, Vy, Vz, label)
         print('DONE')
-        # TODO: remove
-        if level['L'] < 3:
-            import matplotlib.pyplot as plt
-            # plt.imshow(label.reshape(level['ny'], level['nx']), vmin=-1, vmax=1)
-            # plt.show()
-        ###
+
         dB0[label == 0] = A[label == 0]
         dB0[label == 1] = B[label == 1]
 
