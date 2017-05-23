@@ -38,7 +38,7 @@
 
 		P. L. Hammer, P. Hansen, and B. Simeone. 
 		Roof duality, complementation and persistency in quadratic 0-1 optimization. 
-		Mathematical Programming, 28:121–155, 1984.
+		Mathematical Programming, 28:121--155, 1984.
 
 		E. Boros, P. L. Hammer, and X. Sun.
 		Network flows and minimization of quadratic pseudo-Boolean functions. 
@@ -120,6 +120,9 @@
 // #define user_assert(ignore)((void) 0) 
 // #define code_assert(ignore)((void) 0) 
 
+
+template<typename REAL>
+void get_type_information(const char*& type_name, const char*& type_format);
 
 
 // REAL: can be int, float, double.
@@ -262,7 +265,7 @@ public:
 	//
 	//         A. Billionnet and B. Jaumard. 
 	//         A decomposition method for minimizing quadratic pseudoboolean functions. 
-	//         Operation Research Letters, 8:161–163, 1989.	
+	//         Operation Research Letters, 8:161--163, 1989.	
 	//
 	//     For a review see also 
 	//
@@ -488,8 +491,6 @@ private:
 	Block<Node*>		*changed_list;
 
 	/////////////////////////////////////////////////////////////////////////
-
-	void get_type_information(const char*& type_name, const char*& type_format);
 
 	void reallocate_nodes(int node_num_max_new);
 	void reallocate_arcs(int arc_num_max_new);

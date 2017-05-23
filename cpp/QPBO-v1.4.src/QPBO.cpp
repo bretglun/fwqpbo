@@ -23,6 +23,26 @@
 #include <string.h>
 #include "QPBO.h"
 
+template <> 
+	void get_type_information<int>(const char*& type_name, const char*& type_format)
+{
+	type_name = "int";
+	type_format = "d";
+}
+
+template <> 
+	void get_type_information<float>(const char*& type_name, const char*& type_format)
+{
+	type_name = "float";
+	type_format = "f";
+}
+
+template <> 
+	void get_type_information<double>(const char*& type_name, const char*& type_format)
+{
+	type_name = "double";
+	type_format = "lf";
+}
 
 template <typename REAL> 
 	QPBO<REAL>::QPBO(int node_num_max, int edge_num_max, void (*err_function)(const char *))
@@ -290,7 +310,7 @@ template <typename REAL>
 	char FORMAT_LINE[64];
 	int factor = (stage == 0) ? 2 : 1;
 
-	get_type_information(type_name, type_format);
+	get_type_information<REAL>(type_name, type_format);
 
 	fp = fopen(filename, "w");
 	if (!fp) return false;
@@ -331,7 +351,7 @@ template <typename REAL>
 	char LINE[256], FORMAT_LINE_NODE[64], FORMAT_LINE_EDGE[64];
 	int NODE_NUM, EDGE_NUM, K;
 
-	get_type_information(type_name, type_format);
+	get_type_information<REAL>(type_name, type_format);
 
 	fp = fopen(filename, "r");
 	if (!fp) { printf("Cannot open %s\n", filename); return false; }
