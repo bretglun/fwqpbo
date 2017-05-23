@@ -16,3 +16,4 @@ testStuff.py
 *.def
 cpp/bin/Debug
 cpp/obj/
+build
