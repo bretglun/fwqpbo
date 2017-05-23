@@ -1,1 +1,1 @@
-python FWQPBO.py -d "challenge/1.txt" -a "algoParams3D.txt" -m "modelParams.txt"
+python3 FWQPBO.py -d "challenge/1.txt" -a "algoParams3D.txt" -m "modelParams.txt"
