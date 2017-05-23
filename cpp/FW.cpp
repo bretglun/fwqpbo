@@ -18,6 +18,14 @@ using Eigen::Matrix;
 #include "QPBO-v1.4.src/QPBO.h"
 #include "fibonacci.h"
 
+#if defined(_MSC_VER) // Microsoft compiler
+    #define DLLEXPORT extern "C" __declspec(dllexport)
+#elif defined(__GNUC__) // GNU compiler
+    #define DLLEXPORT extern "C"
+#else
+#error unknown compiler
+#endif
+
 #define PI 3.14159265358979323846
 #define gyro 42.576 // 1H Gyromagnetic ratio [MHz/T]
 #define IMGTYPE float
@@ -824,8 +832,7 @@ void QPBOgc(int nx, int ny, int nz, image<vector<float> >* D, image<vector<float
 	delete MRF;
 }
 
-extern "C" {
-__declspec(dllexport) void __cdecl gc(int nx, int ny, int nz, const float* D, const float* Vx, const float* Vy, const float* Vz, int* label)
+DLLEXPORT void gc(int nx, int ny, int nz, const float* D, const float* Vx, const float* Vy, const float* Vz, int* label)
 {
     image<vector<float> >* D_im = new image<vector<float> >(nx,ny,nz);
 	image<vector<float> >* Vx_im = new image<vector<float> >(nx-1,ny,nz);
@@ -849,7 +856,7 @@ __declspec(dllexport) void __cdecl gc(int nx, int ny, int nz, const float* D, co
 	return;
 }
 
-__declspec(dllexport) void __cdecl fwqpbo(const IMGTYPE* Yreal,const IMGTYPE* Yimag,int N,int nx,int ny,int nz,float dx,float dy,float dz,float t1,float dt,float B0,float* CS,float* alpha,int M,int P,bool realEstimates,float R2step,int nR2,int* iR2cand,int nR2cand,bool FibSearch,float mu,int nB0,int nICMiter,int maxICMupdate,int graphcutLevel,bool multiScale,IMGTYPE* Xreal,IMGTYPE* Ximag,IMGTYPE* R2map,IMGTYPE* B0map)
+DLLEXPORT void fwqpbo(const IMGTYPE* Yreal,const IMGTYPE* Yimag,int N,int nx,int ny,int nz,float dx,float dy,float dz,float t1,float dt,float B0,float* CS,float* alpha,int M,int P,bool realEstimates,float R2step,int nR2,int* iR2cand,int nR2cand,bool FibSearch,float mu,int nB0,int nICMiter,int maxICMupdate,int graphcutLevel,bool multiScale,IMGTYPE* Xreal,IMGTYPE* Ximag,IMGTYPE* R2map,IMGTYPE* B0map)
 {
 	// ---------- PREPARE AND PRECALCULATE ---------- //
 	cout << "Preparations and precalculations...";
@@ -1004,5 +1011,4 @@ __declspec(dllexport) void __cdecl fwqpbo(const IMGTYPE* Yreal,const IMGTYPE* Yi
 	if (determineR2) delete R2;
 	delete S;
 	return;
-}
 }
