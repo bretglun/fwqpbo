@@ -5,22 +5,21 @@ import os
 
 IMGTYPE = ctypes.c_float
 
-# Configure the fat-water separation function from the c++ DLL
-
-
+# Configure the fat-water separation function from the c++ shared library
 def init_FWcpp():
-    DLLdir = os.path.join(os.path.dirname(__file__), r'cpp/bin/Release')
-    if '32 bit' in sys.version:
-        DLLfile = 'FW32'
-    else:
-        DLLfile = 'FW64'
+    libdir = os.path.join(os.path.dirname(__file__), r'build')
+    # if '32 bit' in sys.version:
+    #     libfile = 'FW32'
+    # else:
+    #     libfile = 'FW64'
+    libfile = 'libfw'
     try:
-        FWDLL = np.ctypeslib.load_library(DLLfile, DLLdir)
+        fwlib = np.ctypeslib.load_library(libfile, libdir)
     except:
         print(sys.exc_info())
-        raise Exception('{}.dll not found in dir "{}"'.format(DLLfile, DLLdir))
+        raise Exception('{} library not found in dir "{}"'.format(libfile, libdir))
 
-    FWcpp = FWDLL.fwqpbo  # Get exported function from DLL
+    FWcpp = fwlib.fwqpbo  # Get exported function from DLL
     FWcpp.restype = None  # Needed for void functions
 
     FWcpp.argtypes = [
@@ -73,6 +72,8 @@ def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
         B0map = np.empty(nVxl, dtype=IMGTYPE)
     if R2map is None:
         R2map = np.empty(nVxl, dtype=IMGTYPE)
+
+    aPar.iR2cand.dtype='int32'
 
     FWcpp = init_FWcpp()
     FWcpp(Yreal, Yimag, dPar.N, dPar.nx, dPar.ny, dPar.nz, dPar.dx, dPar.dy,
