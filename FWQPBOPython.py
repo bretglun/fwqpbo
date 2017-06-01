@@ -434,7 +434,7 @@ def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
             Qp[r].append(np.dot(RAp[r], Bh[b]))
 
     # For B0 index -> off-resonance in ppm
-    B0step = 1.0/aPar.nB0/dPar.dt/gyro/dPar.B0
+    B0step = 1.0/aPar.nB0/np.abs(dPar.dt)/gyro/dPar.B0
     if determineB0:
         V = []  # Precalculate discontinuity costs
         for b in range(aPar.nB0):
