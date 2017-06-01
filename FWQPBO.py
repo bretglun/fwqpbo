@@ -587,30 +587,30 @@ def getFACalphas(CL=None, P2U=None, UD=None):
     alpha = np.zeros([M, P], dtype=np.float32)
     alpha[0, 0] = 1.  # Water component
     if M == 2:
-        # F = 9A+(6(CL-4)+UD(2P2U-8))B+6C+4UDD+6E+2UDP2UF+2G+2H+I+UD(2P2U+2)J
-        alpha[1, 1:] = [9, 6*(CL-4)+UD*(2*P2U-8), 6, 4*UD, 6, 2*UD*P2U,
-                        2, 2, 1, UD*(2*P2U+2)]
+        # F = 9A+(6(CL-4)+UD(2P2U-8))B+6C+4UD(1-P2U)D+6E+2UDP2UF+2G+2H+I+2UDJ
+        alpha[1, 1:] = [9, 6*(CL-4)+UD*(2*P2U-8), 6, 4*UD*(1-P2U), 6, 2*UD*P2U,
+                        2, 2, 1, UD*2]
     elif M == 3:
         # // F1 = 9A+6(CL-4)B+6C+6E+2G+2H+I
-        # // F2 = (2P2U-8)B+4D+2P2UF+(2P2U+2)J
+        # // F2 = (2P2U-8)B+4(1-P2U)D+2P2UF+2J
         alpha[1, 1:] = [9, 6*(CL-4), 6, 0, 6, 0, 2, 2, 1, 0]
-        alpha[2, 1:] = [0, 2*P2U-8, 0, 4, 0, 2*P2U, 0, 0, 0, 2*P2U+2]
+        alpha[2, 1:] = [0, 2*P2U-8, 0, 4*(1-P2U), 0, 2*P2U, 0, 0, 0, 2]
     elif M == 4:
         # // F1 = 9A+6(CL-4)B+6C+6E+2G+2H+I
         # // F2 = -8B+4D+2J
-        # // F3 = 2B+2F+2J
+        # // F3 = 2B-4D+2F
         alpha[1, 1:] = [9, 6*(CL-4), 6, 0, 6, 0, 2, 2, 1, 0]
         alpha[2, 1:] = [0, -8, 0, 4, 0, 0, 0, 0, 0, 2]
-        alpha[3, 1:] = [0, 2, 0, 0, 0, 2, 0, 0, 0, 2]
+        alpha[3, 1:] = [0, 2, 0, -4, 0, 2, 0, 0, 0, 0]
     elif M == 5:
-        # // F1 = 9A+6C+6E+2G+2H+I
-        # // F2 = 2B
-        # // F3 = 4D+2J
-        # // F4 = 2F+2J
-        alpha[1, 1:] = [9, 0, 6, 0, 6, 0, 2, 2, 1, 0]
-        alpha[2, 1:] = [0, 2, 0, 0, 0, 0, 0, 0, 0, 0]
-        alpha[3, 1:] = [0, 0, 0, 4, 0, 0, 0, 0, 0, 2]
-        alpha[4, 1:] = [0, 0, 0, 0, 0, 2, 0, 0, 0, 2]
+        # // F1 = 9A-24B+6C+6E+2G+2H+I
+        # // F2 = -8B+4D+2J
+        # // F3 = 2B-4D+2F
+        # // F4 = 6B
+        alpha[1, 1:] = [9, -24, 6, 0, 6, 0, 2, 2, 1, 0]
+        alpha[2, 1:] = [0, -8, 0, 4, 0, 0, 0, 0, 0, 2]
+        alpha[3, 1:] = [0, 2, 0, -4, 0, 2, 0, 0, 0, 0]
+        alpha[4, 1:] = [0, 6, 0, 0, 0, 0, 0, 0, 0, 0]
     return alpha
 
 
@@ -912,17 +912,17 @@ def reconstructAndSave(dPar, aPar, mPar):
             # UD = F2/F1
             UD = np.abs(rho[2]/(rho[1]+eps))
         elif mPar.nFAC == 2:
-            # UD = (F2+F3)/F1
+            # UD = F2/F1
             # PUD = F3/F1
-            UD = np.abs((rho[2]+rho[3])/(rho[1]+eps))
-            PUD = np.abs((rho[3])/(rho[1]+eps))
+            UD = np.abs(rho[2]/(rho[1]+eps))
+            PUD = np.abs(rho[3]/(rho[1]+eps))
         elif mPar.nFAC == 3:
-            # CL = 4+(F2+4F3+3F4)/3F1
-            # UD = (F3+F4)/F1
-            # PUD = F4/F1
-            CL = 4 + np.abs((rho[2]+4*rho[3]+3*rho[4])/(3*rho[1]+eps))
-            UD = np.abs((rho[3]+rho[4])/(rho[1]+eps))
-            PUD = np.abs((rho[4])/(rho[1]+eps))
+            # UD = F2/F1
+            # PUD = F3/F1
+            # CL = F4/F1
+            UD = np.abs(rho[2]/(rho[1]+eps))
+            PUD = np.abs(rho[3]/(rho[1]+eps))
+            CL = np.abs(rho[4]/(rho[1]+eps))
 
     # Images to be saved:
     bphi = aPar.realEstimates  # Inital phase phi
