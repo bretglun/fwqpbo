@@ -37,6 +37,7 @@ tagDict = {
     'Rows': 0x00280010,
     'Columns': 0x00280011,
     'Pixel Spacing': 0x00280030,
+    'Pixel Aspect Ratio': 0x00280034,
     'Smallest Pixel Value': 0x00280106,
     'Largest Pixel Value': 0x00280107,
     'Window Center': 0x00281050,
@@ -165,6 +166,8 @@ def save(outDir, image, dPar, seriesDescription, seriesNumber,
             ds.Rows = img.shape[0]
             setTagValue(ds, 'Study Instance UID',
                         getSOPInstanceUID(), iFrame, 'UI')
+            setTagValue(ds, 'Pixel Spacing', [dPar.dx, dPar.dy], iFrame, 'DS')
+            setTagValue(ds, 'Pixel Aspect Ratio', [int(dPar.dx*100), int(dPar.dy*100)], iFrame, 'IS')
         # Change/add DICOM tags:
         setTagValue(ds, 'SOP Instance UID', getSOPInstanceUID(), iFrame, 'UI')
         setTagValue(ds, 'SOP Class UID',
