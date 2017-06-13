@@ -58,7 +58,7 @@ for case in cases:
     outDir = r'./challenge/{}_REC'.format(str(case).zfill(2))
     t = time.time()
     FWQPBO.FW(dataParamsFile, algoParamsFile, modelParamsFile, outDir)
-    results.append((case, getScore(case, outDir + '/FF'), time.time() - t))
+    results.append((case, getScore(case, outDir + '/ff'), time.time() - t))
 
 print()
 for case, score, recTime in results:

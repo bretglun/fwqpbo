@@ -17,3 +17,5 @@ testStuff.py
 cpp/bin/Debug
 cpp/obj/
 build
+
+*.pyc

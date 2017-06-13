@@ -10,17 +10,14 @@ gyro = 42.576
 
 # Configure the QPBO graphcut function from the c++ DLL
 def init_QPBOcpp():
-    DLLdir = os.path.join(os.path.dirname(__file__), r'cpp/bin/Release')
-    if '32 bit' in sys.version:
-        DLLfile = 'FW32'
-    else:
-        DLLfile = 'FW64'
+    libdir = os.path.join(os.path.dirname(__file__), r'build')
+    libfile = 'libfw'
     try:
-        FWDLL = np.ctypeslib.load_library(DLLfile, DLLdir)
+        fwlib = np.ctypeslib.load_library(libfile, libdir)
     except:
         print(sys.exc_info())
-        raise Exception('{}.dll not found in dir "{}"'.format(DLLfile, DLLdir))
-    QPBOcpp = FWDLL.gc  # Get exported function from DLL
+        raise Exception('{} not found in dir "{}"'.format(libfile, libdir))
+    QPBOcpp = fwlib.gc  # Get exported function from DLL
     QPBOcpp .restype = None  # Needed for void functions
 
     QPBOcpp.argtypes = [
