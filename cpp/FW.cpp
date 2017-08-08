@@ -1,3 +1,13 @@
+// conditional use of dllexport/dllimport
+// from solution at: https://software.intel.com/en-us/forums/intel-c-compiler/topic/309029
+#ifdef WIN32
+#define BASEAPI_EXP __declspec(dllexport)
+#else
+// Linux or OSX
+#define BASEAPI_EXP
+#define __cdecl __attribute__((__cdecl__))  // ignore __cdecl on linux/osx
+#endif
+
 #include <ctime>
 #include <iostream>
 #include <complex>
@@ -825,7 +835,7 @@ void QPBOgc(int nx, int ny, int nz, image<vector<float> >* D, image<vector<float
 }
 
 extern "C" {
-__declspec(dllexport) void __cdecl gc(int nx, int ny, int nz, const float* D, const float* Vx, const float* Vy, const float* Vz, int* label)
+BASEAPI_EXP void __cdecl gc(int nx, int ny, int nz, const float* D, const float* Vx, const float* Vy, const float* Vz, int* label)
 {
     image<vector<float> >* D_im = new image<vector<float> >(nx,ny,nz);
 	image<vector<float> >* Vx_im = new image<vector<float> >(nx-1,ny,nz);
@@ -849,7 +859,7 @@ __declspec(dllexport) void __cdecl gc(int nx, int ny, int nz, const float* D, co
 	return;
 }
 
-__declspec(dllexport) void __cdecl fwqpbo(const IMGTYPE* Yreal,const IMGTYPE* Yimag,int N,int nx,int ny,int nz,float dx,float dy,float dz,float t1,float dt,float B0,float* CS,float* alpha,int M,int P,bool realEstimates,float R2step,int nR2,int* iR2cand,int nR2cand,bool FibSearch,float mu,int nB0,int nICMiter,int maxICMupdate,int graphcutLevel,bool multiScale,IMGTYPE* Xreal,IMGTYPE* Ximag,IMGTYPE* R2map,IMGTYPE* B0map)
+BASEAPI_EXP void __cdecl fwqpbo(const IMGTYPE* Yreal,const IMGTYPE* Yimag,int N,int nx,int ny,int nz,float dx,float dy,float dz,float t1,float dt,float B0,float* CS,float* alpha,int M,int P,bool realEstimates,float R2step,int nR2,int* iR2cand,int nR2cand,bool FibSearch,float mu,int nB0,int nICMiter,int maxICMupdate,int graphcutLevel,bool multiScale,IMGTYPE* Xreal,IMGTYPE* Ximag,IMGTYPE* R2map,IMGTYPE* B0map)
 {
 	// ---------- PREPARE AND PRECALCULATE ---------- //
 	cout << "Preparations and precalculations...";
