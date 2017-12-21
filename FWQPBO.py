@@ -170,8 +170,6 @@ def save(outDir, image, dPar, seriesDescription, seriesNumber,
             setTagValue(ds, 'Pixel Aspect Ratio', [int(dPar.dx*100), int(dPar.dy*100)], iFrame, 'IS')
         # Change/add DICOM tags:
         setTagValue(ds, 'SOP Instance UID', getSOPInstanceUID(), iFrame, 'UI')
-        setTagValue(ds, 'SOP Class UID',
-                    'Secondary Capture Image Storage', iFrame, 'UI')
         setTagValue(ds, 'Series Instance UID', seriesInstanceUID, iFrame, 'UI')
         setTagValue(ds, 'Series Number', seriesNumber, iFrame, 'IS')
         setTagValue(ds, 'Echo Time', 0., iFrame, 'DS')
