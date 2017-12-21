@@ -57,7 +57,11 @@ def getSOPInstanceUID():
     return uidstr
 
 
-def getSeriesInstanceUID(): return getSOPInstanceUID() + ".0.0.0"
+def getSeriesInstanceUID(seriesDescription):
+    global seriesInstanceUIDs
+    if not seriesDescription in seriesInstanceUIDs:
+        seriesInstanceUIDs[seriesDescription] = getSOPInstanceUID() + ".0.0.0"
+    return seriesInstanceUIDs[seriesDescription]
 
 
 # Set window so that 95% of pixels are inside
@@ -106,7 +110,7 @@ def save(outDir, image, dPar, seriesDescription, seriesNumber,
     image.shape = (dPar.nz, dPar.ny, dPar.nx)
     if not os.path.isdir(outDir):
         os.mkdir(outDir)
-    seriesInstanceUID = getSeriesInstanceUID()
+    seriesInstanceUID = getSeriesInstanceUID(seriesDescription)
     # Single file is interpreted as multi-frame
     multiframe = dPar.frameList and \
         len(set([frame[0] for frame in dPar.frameList])) == 1
@@ -998,6 +1002,8 @@ def FW(dataParamFile, algoParamFile, modelParamFile, outDir=None):
         round(dPar.dx, 2), round(dPar.dy, 2), round(dPar.dz, 2)))
 
     # Run fat/water processing
+    global seriesInstanceUIDs
+    seriesInstanceUIDs = {}
     if algoParams.use3D or len(dPar.sliceList) == 1:
         if 'reconSlab' in dPar:
             slabs = getSlabs(dPar.sliceList, dPar.reconSlab)
