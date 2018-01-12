@@ -380,6 +380,10 @@ def getType(frameList, printType=False):
         if printType:
             print('Magnitude/Real/Imaginary images')
         return 'MRI'
+    elif numM+numP+numR+numI > 0 and numM == numP == numR == numI:
+        if printType:
+            print('Magnitude/Phase/Real/Imaginary images')
+        return 'MPRI'
     else:
         raise Exception('Unknown combination of image types: ' +
                         '{} real, {} imag, {} magn, {} phase'
@@ -476,11 +480,13 @@ def updateDataParamsDICOM(dPar, files):
                 # For some reason, intercept is used as slope (Siemens only?)
                 c = magn*np.exp(phase/float(reScaleIntercept)*2*np.pi*1j)
             # Real/imaginary images and Magnitude/real/imaginary images
-            elif type == 'RI' or type == 'MRI':
+            elif type in ['RI', 'MRI', 'MPRI']:
                 if type == 'RI':
                     realFrame = i+1
                 elif type == 'MRI':
                     realFrame = i+2
+                elif type == 'MPRI':
+                    realFrame = i+3
                 imagFrame = i
                 if multiframe:
                     realPart = dcm.pixel_array[
@@ -505,7 +511,7 @@ def updateDataParamsDICOM(dPar, files):
                 if reScaleIntercept and reScaleSlope:
                     offset = reScaleIntercept/reScaleSlope
                 else:
-                    offset = 0.
+                    offset = -2047.5
                 c = (realPart+offset)+1.0*1j*(imagPart+offset)
             else:
                 raise Exception('Unknown image types')
