@@ -475,8 +475,12 @@ def updateDataParamsDICOM(dPar, files):
                     magn = mDcm.pixel_array[y1:y2, x1:x2].flatten()
                     phase = pDcm.pixel_array[y1:y2, x1:x2].flatten()
                     # Abs val needed for Siemens data to get correct phase sign
-                    reScaleIntercept = np.abs(
-                        getAttribute(pDcm, 'Rescale Intercept'))
+                    try:
+                        reScaleIntercept = np.abs(
+                            getAttribute(pDcm, 'Rescale Intercept'))
+                    except:
+                        print('No Rescale Intercept DICOM tag found. Using 4096.')
+                        reScaleIntercept = 4096
                 # For some reason, intercept is used as slope (Siemens only?)
                 c = magn*np.exp(phase/float(reScaleIntercept)*2*np.pi*1j)
             # Real/imaginary images and Magnitude/real/imaginary images
