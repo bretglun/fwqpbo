@@ -35,7 +35,7 @@ fat separation*. Magn Reson Med, 2016. [doi: 10.1002/mrm.26479]
 
 DEPENDENCIES
 -------------------------------------------------------------------------------
-FWQPBO was written in Python 3.5.1, using modules SciPy 0.17.0, pyDicom 0.9.9.
+FWQPBO was written in Python 3.5.1, using modules SciPy 0.17.0, pyDicom 1.1.0.
 The C++ implementation uses Eigen 3.2.2 (http://eigen.tuxfamily.org/) for linear
 algebra, an image class written by Pedro Felzenszwalb
 (https://github.com/cvjena/Felzenszwalb-Segmentation/blob/master/image.h), and

@@ -1,6 +1,6 @@
 import numpy as np
 import os
-import dicom
+import pydicom
 import datetime
 import sys
 import configparser
@@ -115,7 +115,7 @@ def save(outDir, image, dPar, seriesDescription, seriesNumber,
     multiframe = dPar.frameList and \
         len(set([frame[0] for frame in dPar.frameList])) == 1
     if multiframe:
-        ds = dicom.read_file(dPar.frameList[0][0])
+        ds = pydicom.read_file(dPar.frameList[0][0])
         imVol = np.empty([dPar.nz, dPar.ny*dPar.nx], dtype='uint16')
         frames = []
     if dPar.frameList:
@@ -141,18 +141,18 @@ def save(outDir, image, dPar, seriesDescription, seriesNumber,
             frame = dPar.frameList[dPar.totalN*slice*len(imType)]
             iFrame = frame[1]
             if not multiframe:
-                ds = dicom.read_file(frame[0])
+                ds = pydicom.read_file(frame[0])
         else:
             iFrame = None
             # Create new DICOM images from scratch
-            file_meta = dicom.dataset.Dataset()
+            file_meta = pydicom.dataset.Dataset()
             file_meta.MediaStorageSOPClassUID = \
                 'Secondary Capture Image Storage'
             file_meta.MediaStorageSOPInstanceUID = '1.3.6.1.4.1.9590.100.' +\
                 '1.1.111165684411017669021768385720736873780'
             file_meta.ImplementationClassUID = '1.3.6.1.4.1.9590.100.' + \
                 '1.0.100.4.0'
-            ds = dicom.dataset.FileDataset(filename, {}, file_meta=file_meta,
+            ds = pydicom.dataset.FileDataset(filename, {}, file_meta=file_meta,
                                            preamble=b"\0"*128)
             # Add DICOM tags:
             ds.Modality = 'WSD'
@@ -287,7 +287,7 @@ reqAttributes = ['Image Type', 'Echo Time', 'Slice Location',
 def isValidDataset(files, printOutput=False):
     frameList = []
     for file in files:
-        ds = dicom.read_file(file, stop_before_pixels=True)
+        ds = pydicom.read_file(file, stop_before_pixels=True)
         multiframe = isMultiFrame(ds)
         if multiframe:  # Multi-frame DICOM files
             if len(files) > 1:
@@ -341,7 +341,7 @@ def getValidFiles(files, printOutput=False):
     validFiles = []
     for file in files:
         try:
-            ds = dicom.read_file(file, stop_before_pixels=True)
+            ds = pydicom.read_file(file, stop_before_pixels=True)
         except:
             if printOutput:
                 print('Could not read file: {}'.format(file))
@@ -394,7 +394,7 @@ def getType(frameList, printType=False):
 def updateDataParamsDICOM(dPar, files):
     frameList = []
     for file in files:
-        ds = dicom.read_file(file, stop_before_pixels=True)
+        ds = pydicom.read_file(file, stop_before_pixels=True)
         multiframe = isMultiFrame(ds)
         if multiframe:
             if len(files) > 1:
@@ -451,7 +451,7 @@ def updateDataParamsDICOM(dPar, files):
     img = []
     if multiframe:
         file = frameList[0][0]
-        dcm = dicom.read_file(file)
+        dcm = pydicom.read_file(file)
     for n in dPar.echoes:
         for slice in dPar.sliceList:
             i = (dPar.N*slice+n)*len(type)
@@ -470,8 +470,8 @@ def updateDataParamsDICOM(dPar, files):
                 else:
                     magnFile = frameList[magnFrame][0]
                     phaseFile = frameList[phaseFrame][0]
-                    mDcm = dicom.read_file(magnFile)
-                    pDcm = dicom.read_file(phaseFile)
+                    mDcm = pydicom.read_file(magnFile)
+                    pDcm = pydicom.read_file(phaseFile)
                     magn = mDcm.pixel_array[y1:y2, x1:x2].flatten()
                     phase = pDcm.pixel_array[y1:y2, x1:x2].flatten()
                     # Abs val needed for Siemens data to get correct phase sign
@@ -505,8 +505,8 @@ def updateDataParamsDICOM(dPar, files):
                 else:
                     realFile = frameList[realFrame][0]
                     imagFile = frameList[imagFrame][0]
-                    rDcm = dicom.read_file(realFile)
-                    iDcm = dicom.read_file(imagFile)
+                    rDcm = pydicom.read_file(realFile)
+                    iDcm = pydicom.read_file(imagFile)
                     realPart = rDcm.pixel_array[y1:y2, x1:x2].flatten()
                     imagPart = iDcm.pixel_array[y1:y2, x1:x2].flatten()
                     # Assumes real and imaginary slope/intercept are equal
