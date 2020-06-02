@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import numpy as np
 import os
 import pydicom
@@ -152,6 +154,7 @@ def save(outDir, image, dPar, seriesDescription, seriesNumber,
                 '1.1.111165684411017669021768385720736873780'
             file_meta.ImplementationClassUID = '1.3.6.1.4.1.9590.100.' + \
                 '1.0.100.4.0'
+            file_meta.TransferSyntaxUID = pydicom.uid.ImplicitVRLittleEndian
             ds = pydicom.dataset.FileDataset(filename, {}, file_meta=file_meta,
                                            preamble=b"\0"*128)
             # Add DICOM tags:

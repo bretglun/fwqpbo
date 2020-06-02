@@ -2,7 +2,7 @@
 
 import FWQPBO
 import numpy as np
-import dicom
+import pydicom
 import scipy.io
 import os
 import time
@@ -13,7 +13,7 @@ def getScore(case, dir):
     recFF = np.array([])
     for file in os.listdir(dir):
         try:
-            dcm = dicom.read_file(os.path.join(dir, file))
+            dcm = pydicom.read_file(os.path.join(dir, file))
         except:
             raise Exception('File not found: {}'.format(file))
         reScaleSlope = dcm[0x00281053].value / 100  # FF in %
