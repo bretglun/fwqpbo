@@ -367,12 +367,12 @@ def modulationVectors(nB0, N):
 def modelMatrix(dPar, mPar, R2):
     RA = np.zeros(shape=(dPar.N, mPar.M))+1j*np.zeros(shape=(dPar.N, mPar.M))
     for n in range(dPar.N):
-        t = dPar.t1+n*dPar.dt
-        RA[n, 0] = np.exp(complex(-(t-dPar.t1)*R2, 0))  # Water resonance
-        for p in range(1, mPar.P):  # Loop over fat resonances
-            # Chemical shift between water and peak m (in ppm)
-            omega = 2.*np.pi*gyro*dPar.B0*(mPar.CS[p]-mPar.CS[0])
-            RA[n, 1] += mPar.alpha[1][p]*np.exp(complex(-(t-dPar.t1)*R2, t*omega))
+        t = dPar.t1 + n * dPar.dt
+        for m in range(mPar.M): # Loop over components/species
+            for p in range(mPar.P):  # Loop over all resonances
+                # Chemical shift between water and peak m (in ppm)
+                omega = 2. * np.pi * gyro * dPar.B0 * (mPar.CS[p] - mPar.CS[0])
+                RA[n, m] += mPar.alpha[m][p]*np.exp(complex(-(t-dPar.t1)*R2, t*omega))
     return RA
 
 
