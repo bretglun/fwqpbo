@@ -8,7 +8,7 @@ import sys
 import configparser
 import optparse
 import scipy.io
-import FWQPBOPython
+import fatWaterSeparation
 
 
 # Helper class for convenient reading of config files
@@ -877,10 +877,6 @@ def getFat(rho, nVxl, alpha):
     return fat
 
 
-def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
-    return FWQPBOPython.reconstruct(dPar, aPar, mPar, B0map, R2map)
-
-
 # Core function: Allocate image matrices, call DLL function, and save images
 def reconstructAndSave(dPar, aPar, mPar):
     if 'Temp' in dPar:
@@ -896,7 +892,7 @@ def reconstructAndSave(dPar, aPar, mPar):
         mPar1.alpha = getFACalphas(mPar.CL, mPar.P2U, mPar.UD)
         mPar1.M = mPar1.alpha.shape[0]
         mPar = mPar1
-    rho, B0map, R2map = reconstruct(dPar, aPar, mPar)
+    rho, B0map, R2map = fatWaterSeparation.reconstruct(dPar, aPar, mPar)
     eps = sys.float_info.epsilon
 
     wat = rho[0]
@@ -916,7 +912,7 @@ def reconstructAndSave(dPar, aPar, mPar):
         aPar2.nICMiter = 0  # to omit ICM
         aPar2.graphcutLevel = 100  # to omit the graphcut
 
-        rho, B0map, R2map = reconstruct(dPar, aPar2, mPar, B0map, R2map)
+        rho, B0map, R2map = fatWaterSeparation.reconstruct(dPar, aPar2, mPar, B0map, R2map)
 
         if mPar.nFAC == 1:
             # UD = F2/F1

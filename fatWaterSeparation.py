@@ -1,16 +1,12 @@
-import ctypes
-import thinqpbo as qpbo
+import thinqpbo as tq
 import numpy as np
-import sys
-import os
 from skimage.filters import threshold_otsu
 
-IMGTYPE = ctypes.c_float
 gyro = 42.576
 
 
-def QPBOpython(nx, ny, nz, D, Vx, Vy, Vz, label):
-    graph = qpbo.QPBODouble() # TODO: test QPBOFloat()
+def QPBO(nx, ny, nz, D, Vx, Vy, Vz):
+    graph = tq.QPBOFloat()
     numNodes = nx * ny * nz
     graph.add_node(numNodes)
 
@@ -45,12 +41,12 @@ def QPBOpython(nx, ny, nz, D, Vx, Vy, Vz, label):
                 graph.add_pairwise_term(i, j, Vz[0, i], Vz[1, i], Vz[2, i], Vz[3, i])
 
     graph.solve()
-    #graph.compute_weak_persistencies()
-    twice_energy = graph.compute_twice_energy()
 
+    label = np.zeros(numNodes)
     for i in range(numNodes):
         label[i] = graph.get_label(i)
 
+    return label
 
 
 # TODO: implement Fibonacci search
@@ -286,8 +282,7 @@ def calculateFieldMap(nB0, level, graphcutLevel, multiScale, maxICMupdate,
             OP[b, :] = (1-np.cos(2*np.pi*(b-offresCenter)/nB0))/2*offresPenalty
 
     D = np.array([J[A, range(J.shape[1])] + OP[A, range(OP.shape[1])],
-                 J[B, range(J.shape[1])] + OP[B, range(OP.shape[1])]],
-                 dtype=IMGTYPE)
+                 J[B, range(J.shape[1])] + OP[B, range(OP.shape[1])]])
     print('DONE')
 
     # QPBO
@@ -297,22 +292,20 @@ def calculateFieldMap(nB0, level, graphcutLevel, multiScale, maxICMupdate,
                       V[abs(A[left]-A[right])],
                       V[abs(A[left]-B[right])],
                       V[abs(B[left]-A[right])],
-                      V[abs(B[left]-B[right])]], dtype=IMGTYPE)
+                      V[abs(B[left]-B[right])]])
         Vy = np.array(wy*[
                       V[abs(A[down]-A[up])],
                       V[abs(A[down]-B[up])],
                       V[abs(B[down]-A[up])],
-                      V[abs(B[down]-B[up])]], dtype=IMGTYPE)
+                      V[abs(B[down]-B[up])]])
         Vz = np.array(wz*[
                       V[abs(A[below]-A[above])],
                       V[abs(A[below]-B[above])],
                       V[abs(B[below]-A[above])],
-                      V[abs(B[below]-B[above])]], dtype=IMGTYPE)
-
-        label = np.zeros(ddJ.shape, dtype=ctypes.c_int)
+                      V[abs(B[below]-B[above])]])
 
         print('Solving MRF using QPBO...', end='')
-        QPBOpython(level['nx'], level['ny'], level['nz'], D, Vx, Vy, Vz, label)
+        label = QPBO(level['nx'], level['ny'], level['nz'], D, Vx, Vy, Vz)
         print('DONE')
 
         dB0[label == 0] = A[label == 0]
@@ -495,9 +488,9 @@ def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
                 rho[:, vxls] *= np.exp(1j*phi)
 
     if B0map is None:
-        B0map = np.zeros(nVxl, dtype=IMGTYPE)
+        B0map = np.zeros(nVxl)
     if R2map is None:
-        R2map = np.empty(nVxl, dtype=IMGTYPE)
+        R2map = np.empty(nVxl)
 
     if determineR2:
         R2map[:] = R2*aPar.R2step
