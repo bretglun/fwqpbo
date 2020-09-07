@@ -401,11 +401,8 @@ def getMeanEnergy(Y):
 
 # Perform the actual reconstruction
 def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
-    determineB0 = aPar.graphcutLevel < 20 or aPar.nICMiter > 0
-    nR2 = aPar.nR2
-    determineR2 = nR2 > 1
-    if (nR2 < 0):
-        nR2 = -nR2  # nR2<(-1) will use input R2map
+    determineB0 = aPar.graphcutLevel is not None or aPar.nICMiter > 0
+    determineR2 = (aPar.nR2 > 1) and (R2map is None)
 
     nVxl = dPar.nx*dPar.ny*dPar.nz
 
@@ -419,7 +416,7 @@ def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
     D = None
     if aPar.realEstimates:
         D = []  # Matrix for calculating phi (needed for real-valued estimates)
-    for r in range(nR2):
+    for r in range(aPar.nR2):
         R2 = r*aPar.R2step
         RA.append(modelMatrix(dPar, mPar, R2))
         if aPar.realEstimates:
@@ -434,7 +431,7 @@ def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
         for b in range(aPar.nB0):
             B[b] = realify(B[b])
             Bh[b] = realify(Bh[b])
-    for r in range(nR2):
+    for r in range(aPar.nR2):
         C.append([])
         Qp.append([])
         # Null space projection matrix
@@ -469,12 +466,16 @@ def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
         dB0 = np.array(B0map/B0step, dtype=int)
 
     if determineR2:
-        J = getR2Residuals(Y, dB0, C, aPar.nB0, nR2, nVxl, D)
+        J = getR2Residuals(Y, dB0, C, aPar.nB0, aPar.nR2, nVxl, D)
         R2 = greedyR2(J, nVxl)
+    elif R2map is None:
+        R2 = np.zeros(nVxl, dtype=int)
+    else:
+        R2 = np.array(R2map/aPar.R2step, dtype=int)
 
     # Find least squares solution given dB0 and R2
     rho = np.zeros(shape=(mPar.M, nVxl), dtype=complex)
-    for r in range(nR2):
+    for r in range(aPar.nR2):
         for b in range(aPar.nB0):
             vxls = (dB0 == b)*(R2 == r)
             if not D:  # complex estimates

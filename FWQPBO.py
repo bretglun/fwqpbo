@@ -758,7 +758,7 @@ def setupAlgoParams(aPar, N, FAC=False):
         else:
             aPar.graphcutLevel = 0
     else:
-        aPar.graphcutLevel = 100  # gcLevel>20 means no cut
+        aPar.graphcutLevel = None
     if 'multiscale' in aPar:
         aPar.multiScale = aPar.multiscale == 'True'
     else:
@@ -798,9 +798,9 @@ def setupAlgoParams(aPar, N, FAC=False):
     # Second pass: use B0- and R2*-maps from first pass
     if FAC:
         aPar.pass2 = AttrDict(aPar)  # modify algoParams for pass 2:
-        aPar.pass2.nR2 = -aPar.nR2  # to use provided R2star-map
         aPar.pass2.nICMiter = 0  # to omit ICM
-        aPar.pass2.graphcutLevel = 100  # to omit the graphcut
+        aPar.pass2.graphcutLevel = None  # to omit the graphcut
+        aPar.pass2.graphcut = False
 
 
 # Update data param object, set default parameters and read data from files
