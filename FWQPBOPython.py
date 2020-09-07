@@ -52,29 +52,6 @@ def QPBOpython(nx, ny, nz, D, Vx, Vy, Vz, label):
         label[i] = graph.get_label(i)
 
 
-# Configure the QPBO graphcut function from the c++ DLL
-def init_QPBOcpp():
-    libdir = os.path.join(os.path.dirname(__file__), r'build')
-    libfile = 'libfw'
-    try:
-        fwlib = np.ctypeslib.load_library(libfile, libdir)
-    except:
-        print(sys.exc_info())
-        raise Exception('{} not found in dir "{}"'.format(libfile, libdir))
-    QPBOcpp = fwlib.gc  # Get exported function from DLL
-    QPBOcpp .restype = None  # Needed for void functions
-
-    QPBOcpp.argtypes = [
-        ctypes.c_int,
-        ctypes.c_int,
-        ctypes.c_int,
-        np.ctypeslib.ndpointer(IMGTYPE, flags='aligned, contiguous'),
-        np.ctypeslib.ndpointer(IMGTYPE, flags='aligned, contiguous'),
-        np.ctypeslib.ndpointer(IMGTYPE, flags='aligned, contiguous'),
-        np.ctypeslib.ndpointer(IMGTYPE, flags='aligned, contiguous'),
-        np.ctypeslib.ndpointer(ctypes.c_int, flags='aligned, contiguous')]
-    return QPBOcpp
-
 
 # TODO: implement Fibonacci search
 def greedyR2(J, nVxl):
@@ -335,7 +312,6 @@ def calculateFieldMap(nB0, level, graphcutLevel, multiScale, maxICMupdate,
         label = np.zeros(ddJ.shape, dtype=ctypes.c_int)
 
         print('Solving MRF using QPBO...', end='')
-        #QPBOcpp = init_QPBOcpp()  # Initialize c++ function
         QPBOpython(level['nx'], level['ny'], level['nz'], D, Vx, Vy, Vz, label)
         print('DONE')
 
