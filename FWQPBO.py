@@ -8,7 +8,6 @@ import sys
 import configparser
 import optparse
 import scipy.io
-import FWQPBOPython
 
 
 # Helper class for convenient reading of config files
@@ -771,6 +770,10 @@ def updateAlgoParams(aPar, N):
         aPar.offresPenalty = float(aPar.offrespenalty)
     else:
         aPar.offresPenalty = 0
+    if 'pythonfw' in aPar:
+        aPar.pythonFW = aPar.pythonfw == 'True'
+    else:
+        aPar.pythonFW = False
 
     if aPar.nR2 > 1:
         aPar.R2step = aPar.R2max/(aPar.nR2-1)  # [sec-1]
@@ -878,7 +881,12 @@ def getFat(rho, nVxl, alpha):
 
 
 def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
-    return FWQPBOPython.reconstruct(dPar, aPar, mPar, B0map, R2map)
+    if aPar.pythonFW:
+        method = 'FWQPBOPython'
+    else:
+        method = 'FWQPBOCPP'
+    m = __import__(method)
+    return m.reconstruct(dPar, aPar, mPar, B0map, R2map)
 
 
 # Core function: Allocate image matrices, call DLL function, and save images
