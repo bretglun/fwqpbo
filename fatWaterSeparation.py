@@ -365,7 +365,7 @@ def modulationVectors(nB0, N):
 
 # Construct matrix RA
 def modelMatrix(dPar, mPar, R2):
-    RA = np.zeros(shape=(dPar.N, mPar.M))+1j*np.zeros(shape=(dPar.N, mPar.M))
+    RA = np.zeros(shape=(dPar.N, mPar.M), dtype=complex)
     for n in range(dPar.N):
         t = dPar.t1 + n * dPar.dt
         for m in range(mPar.M): # Loop over components/species
@@ -473,7 +473,7 @@ def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
         R2 = greedyR2(J, nVxl)
 
     # Find least squares solution given dB0 and R2
-    rho = np.zeros(shape=(mPar.M, nVxl))+1j*np.zeros(shape=(mPar.M, nVxl))
+    rho = np.zeros(shape=(mPar.M, nVxl), dtype=complex)
     for r in range(nR2):
         for b in range(aPar.nB0):
             vxls = (dB0 == b)*(R2 == r)
