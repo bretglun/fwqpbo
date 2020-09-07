@@ -1,4 +1,5 @@
 import ctypes
+import thinqpbo as qpbo
 import numpy as np
 import sys
 import os
@@ -6,6 +7,49 @@ from skimage.filters import threshold_otsu
 
 IMGTYPE = ctypes.c_float
 gyro = 42.576
+
+
+def QPBOpython(nx, ny, nz, D, Vx, Vy, Vz, label):
+    graph = qpbo.QPBODouble() # TODO: test QPBOFloat()
+    numNodes = nx * ny * nz
+    graph.add_node(numNodes)
+
+    # Add unary terms:
+    for i in range(numNodes):
+        graph.add_unary_term(i, D[0, i], D[1, i])
+
+    # Add binary terms in x-direction:
+    for z in range(nz):
+        for y in range(ny):
+            for x in range(nx-1):
+                i = (z*ny + y)*nx + x # node index
+                j = i + 1 # x neighbor node index
+                ix = (z*ny + y)*(nx-1) + x # node index for Vx (dims differ)
+                graph.add_pairwise_term(i, j, Vx[0, ix], Vx[1, ix], Vx[2, ix], Vx[3, ix])
+    
+    # Add binary terms in y-direction
+    for z in range(nz):
+        for y in range(ny-1):
+            for x in range(nx) :
+                i = (z*ny + y)*nx + x # node index
+                j = i + nx # y neighbor node index
+                iy = (z*(ny-1) + y)*nx + x # node index for Vy (dims differ)
+                graph.add_pairwise_term(i, j, Vy[0, iy], Vy[1, iy], Vy[2, iy], Vy[3, iy])
+
+    # Add binary terms in z-direction
+    for z in range(nz-1):
+        for y in range(ny):
+            for x in range(nx):
+                i = (z*ny + y)*nx + x # node index
+                j = i + ny*nx # z neighbor node index
+                graph.add_pairwise_term(i, j, Vz[0, i], Vz[1, i], Vz[2, i], Vz[3, i])
+
+    graph.solve()
+    #graph.compute_weak_persistencies()
+    twice_energy = graph.compute_twice_energy()
+
+    for i in range(numNodes):
+        label[i] = graph.get_label(i)
 
 
 # Configure the QPBO graphcut function from the c++ DLL
@@ -291,8 +335,8 @@ def calculateFieldMap(nB0, level, graphcutLevel, multiScale, maxICMupdate,
         label = np.zeros(ddJ.shape, dtype=ctypes.c_int)
 
         print('Solving MRF using QPBO...', end='')
-        QPBOcpp = init_QPBOcpp()  # Initialize c++ function
-        QPBOcpp(level['nx'], level['ny'], level['nz'], D, Vx, Vy, Vz, label)
+        #QPBOcpp = init_QPBOcpp()  # Initialize c++ function
+        QPBOpython(level['nx'], level['ny'], level['nz'], D, Vx, Vy, Vz, label)
         print('DONE')
 
         dB0[label == 0] = A[label == 0]
