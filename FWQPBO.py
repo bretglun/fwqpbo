@@ -60,11 +60,12 @@ def getSOPInstanceUID():
     return uidstr
 
 
-def getSeriesInstanceUID(seriesDescription):
-    global seriesInstanceUIDs
-    if not seriesDescription in seriesInstanceUIDs:
-        seriesInstanceUIDs[seriesDescription] = getSOPInstanceUID() + ".0.0.0"
-    return seriesInstanceUIDs[seriesDescription]
+def getSeriesInstanceUID(dPar, seriesDescription):
+    if not 'seriesInstanceUIDs' in dPar:
+        dPar['seriesInstanceUIDs'] = {}
+    if not seriesDescription in dPar['seriesInstanceUIDs']:
+        dPar['seriesInstanceUIDs'][seriesDescription] = getSOPInstanceUID() + ".0.0.0"
+    return dPar['seriesInstanceUIDs'][seriesDescription]
 
 
 # Set window so that 95% of pixels are inside
@@ -113,7 +114,7 @@ def save(outDir, image, dPar, seriesDescription, seriesNumber,
     image.shape = (dPar.nz, dPar.ny, dPar.nx)
     if not os.path.isdir(outDir):
         os.mkdir(outDir)
-    seriesInstanceUID = getSeriesInstanceUID(seriesDescription)
+    seriesInstanceUID = getSeriesInstanceUID(dPar, seriesDescription)
     # Single file is interpreted as multi-frame
     multiframe = dPar.frameList and \
         len(set([frame[0] for frame in dPar.frameList])) == 1
@@ -653,11 +654,14 @@ def readIntString(str):
 
 
 # Update model parameter object mPar and set default parameters
-def updateModelParams(mPar, clockwisePrecession=False):
+def setupModelParams(mPar, clockwisePrecession=False, temperature=None):
     if 'watcs' in mPar:
         watCS = [float(mPar.watcs)]
     else:
-        watCS = [4.7]
+        if temperature: # Temperature dependence according to Hernando 2014
+            watCS = 1.3 + 3.748 -.01085 * temperature # Temp in [°C]
+        else:
+            watCS = [4.7]
     if 'fatcs' in mPar:
         fatCS = [float(cs) for cs in mPar.fatcs.split(',')]
     else:
@@ -705,9 +709,17 @@ def updateModelParams(mPar, clockwisePrecession=False):
         raise Exception('Unknown number of FAC parameters: {}'
                         .format(mPar.nFAC))
 
+    # For Fatty Acid Composition, create modelParams for two passes: mPar and mPar.pass2
+    # First pass: use standard fat-water separation to determine B0 and R2*
+    # Second pass: do the Fatty Acid Composition
+    if mPar.nFAC > 0: 
+        mPar.pass2 = AttrDict(mPar) # copy mPar into pass 2, then modify pass 1
+        mPar.alpha = getFACalphas(mPar.CL, mPar.P2U, mPar.UD)
+        mPar.M = mPar.alpha.shape[0]
+
 
 # Update algorithm parameter object aPar and set default parameters
-def updateAlgoParams(aPar, N):
+def setupAlgoParams(aPar, N, FAC=False):
     if 'nr2' in aPar:
         aPar.nR2 = int(aPar.nr2)
     else:
@@ -781,9 +793,18 @@ def updateAlgoParams(aPar, N):
     aPar.nR2cand = len(aPar.iR2cand)
     aPar.maxICMupdate = round(aPar.nB0/10)
 
+    # For Fatty Acid Composition, create algorithmParams for two passes: aPar and aPar.pass2
+    # First pass: use standard fat-water separation to determine B0 and R2*
+    # Second pass: use B0- and R2*-maps from first pass
+    if FAC:
+        aPar.pass2 = AttrDict(aPar)  # modify algoParams for pass 2:
+        aPar.pass2.nR2 = -aPar.nR2  # to use provided R2star-map
+        aPar.pass2.nICMiter = 0  # to omit ICM
+        aPar.pass2.graphcutLevel = 100  # to omit the graphcut
+
 
 # Update data param object, set default parameters and read data from files
-def updateDataParams(dPar, outDir=None):
+def setupDataParams(dPar, outDir=None):
     if outDir:
         dPar.outDir = outDir
     elif 'outdir' in dPar:
@@ -803,8 +824,10 @@ def updateDataParams(dPar, outDir=None):
         dPar.cropFOV = [int(x.replace(' ', '')) for x in dPar.cropfov.split(',')]
     if 'reconslab' in dPar:
         dPar.reconSlab = int(dPar.reconslab)
-    if 'temp' in dPar:
-        dPar.Temp = float(dPar.temp)
+    if 'temperature' in dPar:
+        dPar.Temperature = float(dPar.temperature)
+    else:
+        dPar.Temperature = None
     if 'clockwiseprecession' in dPar:
         dPar.clockwisePrecession = dPar.clockwiseprecession == 'True'
     else:
@@ -869,67 +892,61 @@ def getSlabs(sliceList, reconSlab):
     slabs.append((slices, pos))
     return slabs
 
+
+def getFattyAcidComposition(rho):
+    nFAC = len(rho) - 2 # Number of Fatty Acid Composition Parameters
+    eps = sys.float_info.epsilon
+    CL, UD, PUD = None, None, None
+
+    if nFAC == 1:
+        # UD = F2/F1
+        UD = np.abs(rho[2] / (rho[1] + eps))
+    elif nFAC == 2:
+        # UD = F2/F1
+        # PUD = F3/F1
+        UD = np.abs(rho[2] / (rho[1] + eps))
+        PUD = np.abs(rho[3] / (rho[1] + eps))
+    elif nFAC == 3:
+        # UD = F2/F1
+        # PUD = F3/F1
+        # CL = F4/F1
+        UD = np.abs(rho[2] / (rho[1] + eps))
+        PUD = np.abs(rho[3] / (rho[1] + eps))
+        CL = np.abs(rho[4] / (rho[1] + eps))
+    else:
+        raise Exception('Unknown number of Fatty Acid Composition parameters: {}'.format(nFAC))
+
+    return CL, UD, PUD
+
+
 # Get total fat component (for Fatty Acid Composition; trivial otherwise)
-def getFat(rho, nVxl, alpha):
-    fat = np.zeros(nVxl)+1j*np.zeros(nVxl)
+def getFat(rho, alpha):
+    nVxl = np.shape(rho)[1]
+    fat = np.zeros(nVxl, dtype=complex)
     for m in range(1, alpha.shape[0]):
         fat += sum(alpha[m, 1:])*rho[m]
     return fat
 
 
-# Core function: Allocate image matrices, call DLL function, and save images
+# Core function: perform fat/water separation and save images
 def reconstructAndSave(dPar, aPar, mPar):
-    if 'Temp' in dPar:
-        # Temperature dependence according to Hernando 2014
-        mPar.CS[0] = 1.3+3.748-.01085*dPar.Temp
 
-    nVxl = dPar.nx*dPar.ny*dPar.nz
-
-    if mPar.nFAC > 0:  # For Fatty Acid Composition
-        # First pass: use standard fat-water separation to determine B0 and R2*
-        mPar1 = AttrDict(mPar)  # modify modelParams for pass 1
-        mPar2 = AttrDict(mPar)  # modify modelParams for pass 2
-        mPar1.alpha = getFACalphas(mPar.CL, mPar.P2U, mPar.UD)
-        mPar1.M = mPar1.alpha.shape[0]
-        mPar = mPar1
+    # Do the fat/water separation
     rho, B0map, R2map = fatWaterSeparation.reconstruct(dPar, aPar, mPar)
-    eps = sys.float_info.epsilon
-
     wat = rho[0]
-    fat = getFat(rho, nVxl, mPar.alpha)
-
+    fat = getFat(rho, mPar.alpha)
+    
+    # Calculate the fat fraction
     if aPar.magnDiscr:  # to avoid bias from noise
-        ff = np.real(fat/(wat+fat+eps))
+        ff = np.real(fat / (wat + fat + sys.float_info.epsilon))
     else:
-        ff = np.abs(fat)/(np.abs(wat)+np.abs(fat)+eps)
+        ff = np.abs(fat)/(np.abs(wat) + np.abs(fat) + sys.float_info.epsilon)
 
-    if mPar.nFAC > 0:  # For Fatty Acid Composition
-        # Second pass: Re-calculate water and all fat components with
-        # FAC using the B0- and R2*-map from first pass
-        mPar = mPar2  # Reset modelParams
-        aPar2 = AttrDict(aPar)  # modify algoParams for pass 2:
-        aPar2.nR2 = -aPar.nR2  # to use provided R2star-map
-        aPar2.nICMiter = 0  # to omit ICM
-        aPar2.graphcutLevel = 100  # to omit the graphcut
-
-        rho, B0map, R2map = fatWaterSeparation.reconstruct(dPar, aPar2, mPar, B0map, R2map)
-
-        if mPar.nFAC == 1:
-            # UD = F2/F1
-            UD = np.abs(rho[2]/(rho[1]+eps))
-        elif mPar.nFAC == 2:
-            # UD = F2/F1
-            # PUD = F3/F1
-            UD = np.abs(rho[2]/(rho[1]+eps))
-            PUD = np.abs(rho[3]/(rho[1]+eps))
-        elif mPar.nFAC == 3:
-            # UD = F2/F1
-            # PUD = F3/F1
-            # CL = F4/F1
-            UD = np.abs(rho[2]/(rho[1]+eps))
-            PUD = np.abs(rho[3]/(rho[1]+eps))
-            CL = np.abs(rho[4]/(rho[1]+eps))
-
+    # Do any Fatty Acid Composition in a second pass
+    if mPar.nFAC > 0:
+        rho = fatWaterSeparation.reconstruct(dPar, aPar.pass2, mPar.pass2, B0map, R2map)[0]
+        CL, UD, PUD = getFattyAcidComposition(rho)
+    
     # Images to be saved:
     bphi = aPar.realEstimates  # Inital phase phi
     bwatfat = True  # Water-only and fat-only
@@ -937,14 +954,15 @@ def reconstructAndSave(dPar, aPar, mPar):
     bff = True  # Fat fraction
     bB0map = True  # B0 off-resonance field map
 
-    shiftB0map = False  # Shift the B0-map with half a period
+    shiftB0map = False  # Shift the B0-map half a period
     if shiftB0map:
         Omega = 1.0/dPar.dt/gyro/dPar.B0
         B0map += Omega/2
-        B0map[B0map > Omega] -= Omega
+        B0map[B0map > Omega] -= Omega # Wrap within period
 
     if not os.path.isdir(dPar.outDir):
         os.mkdir(dPar.outDir)
+        
     if (bphi):
         save(dPar.outDir+r'/phi', np.angle(wat, deg=True)+180, dPar,
              'phi', 100)
@@ -983,16 +1001,16 @@ def readConfig(file, section):
 
 
 # Wrapper function
-def FW(dataParamFile, algoParamFile, modelParamFile, outDir=None):
+def main(dataParamFile, algoParamFile, modelParamFile, outDir=None):
     # Read configuration files
     dPar = readConfig(dataParamFile, 'data parameters')
-    algoParams = readConfig(algoParamFile, 'algorithm parameters')
-    modelParams = readConfig(modelParamFile, 'model parameters')
+    aPar = readConfig(algoParamFile, 'algorithm parameters')
+    mPar = readConfig(modelParamFile, 'model parameters')
 
-    # Self-update configuration objects
-    updateDataParams(dPar, outDir)
-    updateAlgoParams(algoParams, dPar.N)
-    updateModelParams(modelParams, dPar.clockwisePrecession)
+    # Setup configuration objects
+    setupDataParams(dPar, outDir)
+    setupModelParams(mPar, dPar.clockwisePrecession, dPar.Temperature)
+    setupAlgoParams(aPar, dPar.N, mPar.nFAC>0)
 
     print('B0 = {}'.format(round(dPar.B0, 2)))
     print('N = {}'.format(dPar.N))
@@ -1002,29 +1020,26 @@ def FW(dataParamFile, algoParamFile, modelParamFile, outDir=None):
     print('dx,dy,dz = {},{},{}'.format(
         round(dPar.dx, 2), round(dPar.dy, 2), round(dPar.dz, 2)))
 
-    # Run fat/water processing
-    global seriesInstanceUIDs
-    seriesInstanceUIDs = {}
-    if algoParams.use3D or len(dPar.sliceList) == 1:
+    # Run fat/water processing    
+    if aPar.use3D or len(dPar.sliceList) == 1:
         if 'reconSlab' in dPar:
             slabs = getSlabs(dPar.sliceList, dPar.reconSlab)
             for iSlab, (slices, z) in enumerate(slabs):
                 print('Processing slab {}/{} (slices {}-{})...'
                       .format(iSlab+1, len(slabs), slices[0]+1, slices[-1]+1))
                 slabDataParams = getSlabDataParams(dPar, slices, z)
-                reconstructAndSave(slabDataParams, algoParams, modelParams)
+                reconstructAndSave(slabDataParams, aPar, mPar)
         else:
-            reconstructAndSave(dPar, algoParams, modelParams)
+            reconstructAndSave(dPar, aPar, mPar)
     else:
         for z, slice in enumerate(dPar.sliceList):
             print('Processing slice {} ({}/{})...'
                   .format(slice+1, z+1, len(dPar.sliceList)))
             sliceDataParams = getSliceDataParams(dPar, slice, z)
-            reconstructAndSave(sliceDataParams, algoParams, modelParams)
+            reconstructAndSave(sliceDataParams, aPar, mPar)
 
 
-# Command-line tool
-def main():
+if __name__ == '__main__':
     # Initiate command line parser
     p = optparse.OptionParser()
     p.add_option('--dataParamFile', '-d', default='',  type="string",
@@ -1037,7 +1052,4 @@ def main():
     # Parse command line
     options, arguments = p.parse_args()
 
-    FW(options.dataParamFile, options.algoParamFile, options.modelParamFile)
-
-if __name__ == '__main__':
-    main()
+    main(options.dataParamFile, options.algoParamFile, options.modelParamFile)

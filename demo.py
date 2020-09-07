@@ -62,7 +62,7 @@ if __name__ == '__main__':
             algoParamsFile = r'./algoParams3D.txt'
         outDir = r'./challenge/{}_REC'.format(str(case).zfill(2))
         t = time.time()
-        FWQPBO.FW(dataParamsFile, algoParamsFile, modelParamsFile, outDir)
+        FWQPBO.main(dataParamsFile, algoParamsFile, modelParamsFile, outDir)
         results.append((case, getScore(case, outDir + '/ff'), time.time() - t))
 
     print()
