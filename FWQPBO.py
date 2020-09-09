@@ -265,6 +265,15 @@ def save(output, dPar):
         raise Exception('Unknown filetype: {}'.format(dPar.fileType))
 
 
+# Merge output for slices reconstructed separately
+def mergeOutputSlices(outputList):
+    mergedOutput = outputList[0]
+    for output in outputList[1:]:
+        for seriesType in output:
+            mergedOutput[seriesType] = np.concatenate((mergedOutput[seriesType], output[seriesType]))
+    return mergedOutput
+
+
 # Check if ds is a multiframe DICOM object
 def isMultiFrame(ds):
     return tagDict['Number of frames'] in ds and \
@@ -1085,12 +1094,13 @@ def main(dataParamFile, algoParamFile, modelParamFile, outDir=None):
             output = reconstruct(dPar, aPar, mPar)
             save(output, dPar)
     else:
+        output = []
         for z, slice in enumerate(dPar.sliceList):
             print('Processing slice {} ({}/{})...'
                   .format(slice+1, z+1, len(dPar.sliceList)))
             sliceDataParams = getSliceDataParams(dPar, slice, z)
-            output = reconstruct(sliceDataParams, aPar, mPar)
-            save(output, sliceDataParams)
+            output.append(reconstruct(sliceDataParams, aPar, mPar))
+        save(mergeOutputSlices(output), dPar)
 
 
 if __name__ == '__main__':
