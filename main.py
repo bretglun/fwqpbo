@@ -56,130 +56,122 @@ def mergeOutputSlices(outputList):
     return mergedOutput
 
 
-# Get list of all files in directories in dirList
-def getFiles(dirList):
-    files = []  # Get list of files:
-    for dir in dirList:
-        files = files+[os.path.join(dir, file) for file in os.listdir(dir)]
-    return files
+def getFattyAcidComposition(rho):
+    nFAC = len(rho) - 2 # Number of Fatty Acid Composition Parameters
+    eps = sys.float_info.epsilon
+    CL, UD, PUD = None, None, None
 
-
-# Get relative weights alpha of fat resonances based on CL, UD, and PUD per UD
-def getFACalphas(CL=None, P2U=None, UD=None):
-    P = 11  # Expects one water and ten triglyceride resonances
-    M = [CL, UD, P2U].count(None)+2
-    alpha = np.zeros([M, P], dtype=np.float32)
-    alpha[0, 0] = 1.  # Water component
-    if M == 2:
-        # F = 9A+(6(CL-4)+UD(2P2U-8))B+6C+4UD(1-P2U)D+6E+2UDP2UF+2G+2H+I+2UDJ
-        alpha[1, 1:] = [9, 6*(CL-4)+UD*(2*P2U-8), 6, 4*UD*(1-P2U), 6, 2*UD*P2U,
-                        2, 2, 1, UD*2]
-    elif M == 3:
-        # F1 = 9A+6(CL-4)B+6C+6E+2G+2H+I
-        # F2 = (2P2U-8)B+4(1-P2U)D+2P2UF+2J
-        alpha[1, 1:] = [9, 6*(CL-4), 6, 0, 6, 0, 2, 2, 1, 0]
-        alpha[2, 1:] = [0, 2*P2U-8, 0, 4*(1-P2U), 0, 2*P2U, 0, 0, 0, 2]
-    elif M == 4:
-        # F1 = 9A+6(CL-4)B+6C+6E+2G+2H+I
-        # F2 = -8B+4D+2J
-        # F3 = 2B-4D+2F
-        alpha[1, 1:] = [9, 6*(CL-4), 6, 0, 6, 0, 2, 2, 1, 0]
-        alpha[2, 1:] = [0, -8, 0, 4, 0, 0, 0, 0, 0, 2]
-        alpha[3, 1:] = [0, 2, 0, -4, 0, 2, 0, 0, 0, 0]
-    elif M == 5:
-        # F1 = 9A-24B+6C+6E+2G+2H+I
-        # F2 = -8B+4D+2J
-        # F3 = 2B-4D+2F
-        # F4 = 6B
-        alpha[1, 1:] = [9, -24, 6, 0, 6, 0, 2, 2, 1, 0]
-        alpha[2, 1:] = [0, -8, 0, 4, 0, 0, 0, 0, 0, 2]
-        alpha[3, 1:] = [0, 2, 0, -4, 0, 2, 0, 0, 0, 0]
-        alpha[4, 1:] = [0, 6, 0, 0, 0, 0, 0, 0, 0, 0]
-    return alpha
-
-
-# Convert string on form "0-3, 5, 8-22" to set of integers
-def readIntString(str):
-    ints = []
-    for word in [w.replace(' ', '') for w in str.split(',')]:
-        if word.isdigit():
-            ints.append(int(word))
-        elif '-' in word:
-            try:
-                digits = [int(d.replace(' ', '')) for d in word.split('-')]
-            except ValueError:
-                raise Exception('Unexpected integer string "{}"'.format(str))
-            if len(digits) > 2 or digits[0] > digits[1]:
-                raise Exception('Unexpected integer string "{}"'.format(str))
-            else:
-                for i in range(digits[0], digits[1]+1):
-                    ints.append(i)
-    return list(set(ints))
-
-
-# Update model parameter object mPar and set default parameters
-def setupModelParams(mPar, clockwisePrecession=False, temperature=None):
-    if 'watcs' in mPar:
-        watCS = [float(mPar.watcs)]
+    if nFAC == 1:
+        # UD = F2/F1
+        UD = np.abs(rho[2] / (rho[1] + eps))
+    elif nFAC == 2:
+        # UD = F2/F1
+        # PUD = F3/F1
+        UD = np.abs(rho[2] / (rho[1] + eps))
+        PUD = np.abs(rho[3] / (rho[1] + eps))
+    elif nFAC == 3:
+        # UD = F2/F1
+        # PUD = F3/F1
+        # CL = F4/F1
+        UD = np.abs(rho[2] / (rho[1] + eps))
+        PUD = np.abs(rho[3] / (rho[1] + eps))
+        CL = np.abs(rho[4] / (rho[1] + eps))
     else:
-        if temperature: # Temperature dependence according to Hernando 2014
-            watCS = 1.3 + 3.748 -.01085 * temperature # Temp in [°C]
+        raise Exception('Unknown number of Fatty Acid Composition parameters: {}'.format(nFAC))
+
+    return CL, UD, PUD
+
+
+# Get total fat component (for Fatty Acid Composition; trivial otherwise)
+def getFat(rho, alpha):
+    nVxl = np.shape(rho)[1]
+    fat = np.zeros(nVxl, dtype=complex)
+    for m in range(1, alpha.shape[0]):
+        fat += sum(alpha[m, 1:])*rho[m]
+    return fat
+
+
+# Perform fat/water separation and return prescribed output
+def reconstruct(dPar, aPar, mPar):
+
+    # Do the fat/water separation
+    rho, B0map, R2map = fatWaterSeparation.reconstruct(dPar, aPar, mPar)
+    wat = rho[0]
+    fat = getFat(rho, mPar.alpha)
+
+    # Prepare prescribed output
+    output = {}
+    if 'wat' in aPar.output:
+        output['wat'] = np.abs(wat)
+    if 'fat' in aPar.output:
+        output['fat'] = np.abs(fat)
+    if 'phi' in aPar.output:
+        output['phi'] = np.angle(wat, deg=True) + 180
+    if 'ip' in aPar.output: # Calculate synthetic in-phase
+        output['ip'] = np.abs(wat+fat)
+    if 'op' in aPar.output: # Calculate synthetic opposed-phase
+        output['op'] = np.abs(wat-fat)
+    if 'ff' in aPar.output: # Calculate the fat fraction
+        if aPar.magnDiscr:  # to avoid bias from noise
+            output['ff'] = 100 * np.real(fat / (wat + fat + sys.float_info.epsilon))
         else:
-            watCS = [4.7]
-    if 'fatcs' in mPar:
-        fatCS = [float(cs) for cs in mPar.fatcs.split(',')]
-    else:
-        fatCS = [1.3]
-    mPar.CS = np.array(watCS+fatCS, dtype=np.float32)
-    if clockwisePrecession:
-        mPar.CS *= -1
-    mPar.P = len(mPar.CS)
-    if 'nfac' in mPar:
-        mPar.nFAC = int(mPar.nfac)
-    else:
-        mPar.nFAC = 0
-    if mPar.nFAC > 0 and mPar.P is not 11:
-        raise Exception(
-            'FAC excpects exactly one water and ten triglyceride resonances')
-    mPar.M = 2+mPar.nFAC
-    if 'cl' in mPar:
-        mPar.CL = float(mPar.cl)
-    else:
-        mPar.CL = 17.4  # Derived from Lundbom 2010
-    if 'p2u' in mPar:
-        mPar.P2U = float(mPar.p2u)
-    else:
-        mPar.P2U = 0.2  # Derived from Lundbom 2010
-    if 'ud' in mPar:
-        mPar.UD = float(mPar.ud)
-    else:
-        mPar.UD = 2.6  # Derived from Lundbom 2010
-    if mPar.nFAC == 0:
-        mPar.alpha = np.zeros([mPar.M, mPar.P], dtype=np.float32)
-        mPar.alpha[0, 0] = 1.
-        if 'relamps' in mPar:
-            for (p, a) in enumerate(mPar.relamps.split(',')):
-                mPar.alpha[1, p+1] = float(a)
-        else:
-            for p in range(1, mPar.P):
-                mPar.alpha[1, p] = float(1/len(fatCS))
-    elif mPar.nFAC == 1:
-        mPar.alpha = getFACalphas(mPar.CL, mPar.P2U)
-    elif mPar.nFAC == 2:
-        mPar.alpha = getFACalphas(mPar.CL)
-    elif mPar.nFAC == 3:
-        mPar.alpha = getFACalphas()
-    else:
-        raise Exception('Unknown number of FAC parameters: {}'
-                        .format(mPar.nFAC))
+            output['ff'] = 100 * np.abs(fat)/(np.abs(wat) + np.abs(fat) + sys.float_info.epsilon)
+    if 'B0map' in aPar.output:
+        output['B0map'] = B0map
+    if 'R2map' in aPar.output:
+        output['R2map'] = R2map
 
-    # For Fatty Acid Composition, create modelParams for two passes: mPar and mPar.pass2
-    # First pass: use standard fat-water separation to determine B0 and R2*
-    # Second pass: do the Fatty Acid Composition
-    if mPar.nFAC > 0: 
-        mPar.pass2 = AttrDict(mPar) # copy mPar into pass 2, then modify pass 1
-        mPar.alpha = getFACalphas(mPar.CL, mPar.P2U, mPar.UD)
-        mPar.M = mPar.alpha.shape[0]
+    # Do any Fatty Acid Composition in a second pass
+    if mPar.nFAC > 0:
+        rho = fatWaterSeparation.reconstruct(dPar, aPar.pass2, mPar.pass2, B0map, R2map)[0]
+        CL, UD, PUD = getFattyAcidComposition(rho)
+    
+        if 'CL' in aPar.output:
+            output['CL'] = CL
+        if 'UD' in aPar.output:
+            output['UD'] = UD
+        if 'PUD' in aPar.output:
+            output['PUD'] = PUD
+
+    return output
+
+
+# extract data parameter object representing a single slice
+def getSliceDataParams(dPar, slice, z):
+    sliceDataParams = AttrDict(dPar)
+    sliceDataParams.sliceList = [slice]
+    sliceDataParams.img = dPar.img.reshape(
+        dPar.N, dPar.nz, dPar.ny*dPar.nx)[:, z, :].flatten()
+    sliceDataParams.nz = 1
+    return sliceDataParams
+
+
+# extract dPar object representing a slab of contiguous slices starting at z
+def getSlabDataParams(dPar, slices, z):
+    slabDataParams = AttrDict(dPar)
+    slabDataParams.sliceList = slices
+    slabSize = len(slices)
+    slabDataParams.img = dPar.img.reshape(
+        dPar.N, dPar.nz, dPar.ny*dPar.nx)[:, z:z+slabSize, :].flatten()
+    slabDataParams.nz = slabSize
+    return slabDataParams
+
+
+# group slices in sliceList in slabs of reconSlab contiguous slices
+def getSlabs(sliceList, reconSlab):
+    slabs = []
+    slices = []
+    pos = 0
+    for z, slice in enumerate(sliceList):
+        # start a new slab
+        if slices and (len(slices) == reconSlab or not slice == slices[-1]+1):
+            slabs.append((slices, pos))
+            slices = [slice]
+            pos = z
+        else:
+            slices.append(slice)
+    slabs.append((slices, pos))
+    return slabs
 
 
 # Update algorithm parameter object aPar and set default parameters
@@ -279,6 +271,132 @@ def setupAlgoParams(aPar, N, nFAC=0):
         aPar.output.append('UD')
 
 
+# Get relative weights alpha of fat resonances based on CL, UD, and PUD per UD
+def getFACalphas(CL=None, P2U=None, UD=None):
+    P = 11  # Expects one water and ten triglyceride resonances
+    M = [CL, UD, P2U].count(None)+2
+    alpha = np.zeros([M, P], dtype=np.float32)
+    alpha[0, 0] = 1.  # Water component
+    if M == 2:
+        # F = 9A+(6(CL-4)+UD(2P2U-8))B+6C+4UD(1-P2U)D+6E+2UDP2UF+2G+2H+I+2UDJ
+        alpha[1, 1:] = [9, 6*(CL-4)+UD*(2*P2U-8), 6, 4*UD*(1-P2U), 6, 2*UD*P2U,
+                        2, 2, 1, UD*2]
+    elif M == 3:
+        # F1 = 9A+6(CL-4)B+6C+6E+2G+2H+I
+        # F2 = (2P2U-8)B+4(1-P2U)D+2P2UF+2J
+        alpha[1, 1:] = [9, 6*(CL-4), 6, 0, 6, 0, 2, 2, 1, 0]
+        alpha[2, 1:] = [0, 2*P2U-8, 0, 4*(1-P2U), 0, 2*P2U, 0, 0, 0, 2]
+    elif M == 4:
+        # F1 = 9A+6(CL-4)B+6C+6E+2G+2H+I
+        # F2 = -8B+4D+2J
+        # F3 = 2B-4D+2F
+        alpha[1, 1:] = [9, 6*(CL-4), 6, 0, 6, 0, 2, 2, 1, 0]
+        alpha[2, 1:] = [0, -8, 0, 4, 0, 0, 0, 0, 0, 2]
+        alpha[3, 1:] = [0, 2, 0, -4, 0, 2, 0, 0, 0, 0]
+    elif M == 5:
+        # F1 = 9A-24B+6C+6E+2G+2H+I
+        # F2 = -8B+4D+2J
+        # F3 = 2B-4D+2F
+        # F4 = 6B
+        alpha[1, 1:] = [9, -24, 6, 0, 6, 0, 2, 2, 1, 0]
+        alpha[2, 1:] = [0, -8, 0, 4, 0, 0, 0, 0, 0, 2]
+        alpha[3, 1:] = [0, 2, 0, -4, 0, 2, 0, 0, 0, 0]
+        alpha[4, 1:] = [0, 6, 0, 0, 0, 0, 0, 0, 0, 0]
+    return alpha
+
+
+# Update model parameter object mPar and set default parameters
+def setupModelParams(mPar, clockwisePrecession=False, temperature=None):
+    if 'watcs' in mPar:
+        watCS = [float(mPar.watcs)]
+    else:
+        if temperature: # Temperature dependence according to Hernando 2014
+            watCS = 1.3 + 3.748 -.01085 * temperature # Temp in [°C]
+        else:
+            watCS = [4.7]
+    if 'fatcs' in mPar:
+        fatCS = [float(cs) for cs in mPar.fatcs.split(',')]
+    else:
+        fatCS = [1.3]
+    mPar.CS = np.array(watCS+fatCS, dtype=np.float32)
+    if clockwisePrecession:
+        mPar.CS *= -1
+    mPar.P = len(mPar.CS)
+    if 'nfac' in mPar:
+        mPar.nFAC = int(mPar.nfac)
+    else:
+        mPar.nFAC = 0
+    if mPar.nFAC > 0 and mPar.P is not 11:
+        raise Exception(
+            'FAC excpects exactly one water and ten triglyceride resonances')
+    mPar.M = 2+mPar.nFAC
+    if 'cl' in mPar:
+        mPar.CL = float(mPar.cl)
+    else:
+        mPar.CL = 17.4  # Derived from Lundbom 2010
+    if 'p2u' in mPar:
+        mPar.P2U = float(mPar.p2u)
+    else:
+        mPar.P2U = 0.2  # Derived from Lundbom 2010
+    if 'ud' in mPar:
+        mPar.UD = float(mPar.ud)
+    else:
+        mPar.UD = 2.6  # Derived from Lundbom 2010
+    if mPar.nFAC == 0:
+        mPar.alpha = np.zeros([mPar.M, mPar.P], dtype=np.float32)
+        mPar.alpha[0, 0] = 1.
+        if 'relamps' in mPar:
+            for (p, a) in enumerate(mPar.relamps.split(',')):
+                mPar.alpha[1, p+1] = float(a)
+        else:
+            for p in range(1, mPar.P):
+                mPar.alpha[1, p] = float(1/len(fatCS))
+    elif mPar.nFAC == 1:
+        mPar.alpha = getFACalphas(mPar.CL, mPar.P2U)
+    elif mPar.nFAC == 2:
+        mPar.alpha = getFACalphas(mPar.CL)
+    elif mPar.nFAC == 3:
+        mPar.alpha = getFACalphas()
+    else:
+        raise Exception('Unknown number of FAC parameters: {}'
+                        .format(mPar.nFAC))
+
+    # For Fatty Acid Composition, create modelParams for two passes: mPar and mPar.pass2
+    # First pass: use standard fat-water separation to determine B0 and R2*
+    # Second pass: do the Fatty Acid Composition
+    if mPar.nFAC > 0: 
+        mPar.pass2 = AttrDict(mPar) # copy mPar into pass 2, then modify pass 1
+        mPar.alpha = getFACalphas(mPar.CL, mPar.P2U, mPar.UD)
+        mPar.M = mPar.alpha.shape[0]
+
+
+# Convert string on form "0-3, 5, 8-22" to set of integers
+def readIntString(str):
+    ints = []
+    for word in [w.replace(' ', '') for w in str.split(',')]:
+        if word.isdigit():
+            ints.append(int(word))
+        elif '-' in word:
+            try:
+                digits = [int(d.replace(' ', '')) for d in word.split('-')]
+            except ValueError:
+                raise Exception('Unexpected integer string "{}"'.format(str))
+            if len(digits) > 2 or digits[0] > digits[1]:
+                raise Exception('Unexpected integer string "{}"'.format(str))
+            else:
+                for i in range(digits[0], digits[1]+1):
+                    ints.append(i)
+    return list(set(ints))
+
+
+# Get list of all files in directories in dirList
+def getFiles(dirList):
+    files = []  # Get list of files:
+    for dir in dirList:
+        files = files+[os.path.join(dir, file) for file in os.listdir(dir)]
+    return files
+
+    
 # Update data param object, set default parameters and read data from files
 def setupDataParams(dPar, outDir=None):
     if outDir:
@@ -327,124 +445,6 @@ def setupDataParams(dPar, outDir=None):
             MATLAB.updateDataParams(dPar, dPar.files[0])
         else:
             raise Exception('No valid files found')
-
-
-# extract data parameter object representing a single slice
-def getSliceDataParams(dPar, slice, z):
-    sliceDataParams = AttrDict(dPar)
-    sliceDataParams.sliceList = [slice]
-    sliceDataParams.img = dPar.img.reshape(
-        dPar.N, dPar.nz, dPar.ny*dPar.nx)[:, z, :].flatten()
-    sliceDataParams.nz = 1
-    return sliceDataParams
-
-
-# extract dPar object representing a slab of contiguous slices starting at z
-def getSlabDataParams(dPar, slices, z):
-    slabDataParams = AttrDict(dPar)
-    slabDataParams.sliceList = slices
-    slabSize = len(slices)
-    slabDataParams.img = dPar.img.reshape(
-        dPar.N, dPar.nz, dPar.ny*dPar.nx)[:, z:z+slabSize, :].flatten()
-    slabDataParams.nz = slabSize
-    return slabDataParams
-
-
-# group slices in sliceList in slabs of reconSlab contiguous slices
-def getSlabs(sliceList, reconSlab):
-    slabs = []
-    slices = []
-    pos = 0
-    for z, slice in enumerate(sliceList):
-        # start a new slab
-        if slices and (len(slices) == reconSlab or not slice == slices[-1]+1):
-            slabs.append((slices, pos))
-            slices = [slice]
-            pos = z
-        else:
-            slices.append(slice)
-    slabs.append((slices, pos))
-    return slabs
-
-
-def getFattyAcidComposition(rho):
-    nFAC = len(rho) - 2 # Number of Fatty Acid Composition Parameters
-    eps = sys.float_info.epsilon
-    CL, UD, PUD = None, None, None
-
-    if nFAC == 1:
-        # UD = F2/F1
-        UD = np.abs(rho[2] / (rho[1] + eps))
-    elif nFAC == 2:
-        # UD = F2/F1
-        # PUD = F3/F1
-        UD = np.abs(rho[2] / (rho[1] + eps))
-        PUD = np.abs(rho[3] / (rho[1] + eps))
-    elif nFAC == 3:
-        # UD = F2/F1
-        # PUD = F3/F1
-        # CL = F4/F1
-        UD = np.abs(rho[2] / (rho[1] + eps))
-        PUD = np.abs(rho[3] / (rho[1] + eps))
-        CL = np.abs(rho[4] / (rho[1] + eps))
-    else:
-        raise Exception('Unknown number of Fatty Acid Composition parameters: {}'.format(nFAC))
-
-    return CL, UD, PUD
-
-
-# Get total fat component (for Fatty Acid Composition; trivial otherwise)
-def getFat(rho, alpha):
-    nVxl = np.shape(rho)[1]
-    fat = np.zeros(nVxl, dtype=complex)
-    for m in range(1, alpha.shape[0]):
-        fat += sum(alpha[m, 1:])*rho[m]
-    return fat
-
-
-# Perform fat/water separation and return prescribed output
-def reconstruct(dPar, aPar, mPar):
-
-    # Do the fat/water separation
-    rho, B0map, R2map = fatWaterSeparation.reconstruct(dPar, aPar, mPar)
-    wat = rho[0]
-    fat = getFat(rho, mPar.alpha)
-
-    # Prepare prescribed output
-    output = {}
-    if 'wat' in aPar.output:
-        output['wat'] = np.abs(wat)
-    if 'fat' in aPar.output:
-        output['fat'] = np.abs(fat)
-    if 'phi' in aPar.output:
-        output['phi'] = np.angle(wat, deg=True) + 180
-    if 'ip' in aPar.output: # Calculate synthetic in-phase
-        output['ip'] = np.abs(wat+fat)
-    if 'op' in aPar.output: # Calculate synthetic opposed-phase
-        output['op'] = np.abs(wat-fat)
-    if 'ff' in aPar.output: # Calculate the fat fraction
-        if aPar.magnDiscr:  # to avoid bias from noise
-            output['ff'] = 100 * np.real(fat / (wat + fat + sys.float_info.epsilon))
-        else:
-            output['ff'] = 100 * np.abs(fat)/(np.abs(wat) + np.abs(fat) + sys.float_info.epsilon)
-    if 'B0map' in aPar.output:
-        output['B0map'] = B0map
-    if 'R2map' in aPar.output:
-        output['R2map'] = R2map
-
-    # Do any Fatty Acid Composition in a second pass
-    if mPar.nFAC > 0:
-        rho = fatWaterSeparation.reconstruct(dPar, aPar.pass2, mPar.pass2, B0map, R2map)[0]
-        CL, UD, PUD = getFattyAcidComposition(rho)
-    
-        if 'CL' in aPar.output:
-            output['CL'] = CL
-        if 'UD' in aPar.output:
-            output['UD'] = UD
-        if 'PUD' in aPar.output:
-            output['PUD'] = PUD
-
-    return output
 
 
 # Read configuration file
