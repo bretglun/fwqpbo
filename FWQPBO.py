@@ -234,6 +234,15 @@ def padCropped(croppedImage, dPar):
         return croppedImage
 
 
+# Save numpy array as MatLab array
+def saveMatLab(output, dPar):
+    filename = dPar.outDir+r'/{}.mat'.format(dPar.sliceList[0])
+    arrays = {}
+    for series in output:
+        arrays[series['type']] = np.moveaxis(padCropped(series['data'].reshape((dPar.nz, dPar.ny, dPar.nx)), dPar), 0, -1)
+    scipy.io.savemat(filename, arrays)
+
+
 # Save all data in output as DICOM images
 def saveDICOM(output, dPar):
     for series in output:
@@ -251,6 +260,8 @@ def save(output, dPar):
     
     if dPar.fileType == 'DICOM':
         saveDICOM(output, dPar)
+    elif dPar.fileType == 'MatLab':
+        saveMatLab(output, dPar)
     else:
         raise Exception('Unknown filetype: {}'.format(dPar.fileType))
 
