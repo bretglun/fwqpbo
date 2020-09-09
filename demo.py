@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import FWQPBO
+import main
 import numpy as np
 import pydicom
 import scipy.io
@@ -59,7 +59,7 @@ if __name__ == '__main__':
             algoParamsFile = r'./algoParams3D.txt'
         outDir = r'./challenge/{}_REC'.format(str(case).zfill(2))
         t = time.time()
-        FWQPBO.main(dataParamsFile, algoParamsFile, modelParamsFile, outDir)
+        main.main(dataParamsFile, algoParamsFile, modelParamsFile, outDir)
         results.append((case, getScore(case, outDir), time.time() - t))
 
     print()
