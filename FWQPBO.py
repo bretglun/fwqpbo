@@ -106,14 +106,35 @@ def setTagValue(ds, key, val, frame=None, VR=None):
     return False
 
 
+imgTypes = {
+    'phi': {'descr': 'Initial phase (degrees)', 'seriesNumber': 100},
+    'wat': {'descr': 'Water-only', 'seriesNumber': 101},
+    'fat': {'descr': 'Fat-only', 'seriesNumber': 102},
+    'ip': {'descr': 'In-phase', 'seriesNumber': 103},
+    'op': {'descr': 'Opposed-phase', 'seriesNumber': 104},
+    'ff': {'descr': 'Fat Fraction (%)', 'seriesNumber': 105, 'reScaleIntercept': -100, 'reScaleSlope': 0.1},
+    'R2map': {'descr': 'R2* (msec-1)', 'seriesNumber': 106},
+    'B0map': {'descr': 'B0 inhomogeneity (ppm)', 'seriesNumber': 107, 'reScaleSlope': 0.001},
+    'CL': {'descr': 'FAC Chain length', 'seriesNumber': 108, 'reScaleSlope': 0.01},
+    'UD': {'descr': 'FAC Unsaturation degree', 'seriesNumber': 109, 'reScaleSlope': 0.01},
+    'PUD': {'descr': 'FAC Polyunsaturation degree', 'seriesNumber': 110, 'reScaleSlope': 0.01}
+}
+
+
 # Save numpy array to DICOM image.
 # Based on input DICOM image if exists, else create from scratch
-def save(outDir, image, dPar, seriesDescription, seriesNumber,
-         reScaleIntercept=0., reScaleSlope=1.):
-    print(r'Writing image{} to "{}"'.format('s'*(dPar.nz > 1), outDir))
-    image.shape = (dPar.nz, dPar.ny, dPar.nx)
-    if not os.path.isdir(outDir):
-        os.mkdir(outDir)
+def saveDICOMseries(outDir, imgType, img, dPar):
+    seriesDescription = imgTypes[imgType]['descr']
+    seriesNumber = imgTypes[imgType]['seriesNumber']
+    if 'reScaleIntercept' in imgTypes[imgType]:
+        reScaleIntercept = imgTypes[imgType]['reScaleIntercept']
+    else:
+        reScaleIntercept = 0.
+    if 'reScaleSlope' in imgTypes[imgType]:
+        reScaleSlope = imgTypes[imgType]['reScaleSlope']
+    else:
+        reScaleSlope = 1.
+    
     seriesInstanceUID = getSeriesInstanceUID(dPar, seriesDescription)
     # Single file is interpreted as multi-frame
     multiframe = dPar.frameList and \
@@ -123,26 +144,19 @@ def save(outDir, image, dPar, seriesDescription, seriesNumber,
         imVol = np.empty([dPar.nz, dPar.ny*dPar.nx], dtype='uint16')
         frames = []
     if dPar.frameList:
-        imType = getType(dPar.frameList)
+        DICOMimgType = getType(dPar.frameList)
     for z, slice in enumerate(dPar.sliceList):
         filename = outDir+r'/{}.dcm'.format(slice)
-        # Prepare pixel data; truncate and scale
-        if 'cropFOV' in dPar:
-            img = np.zeros((dPar.Ny, dPar.Nx))
-            x1, x2 = dPar.cropFOV[0], dPar.cropFOV[1]
-            y1, y2 = dPar.cropFOV[2], dPar.cropFOV[3]
-            img[y1:y2, x1:x2] = image[z, :, :]
-        else:
-            img = image[z, :, :]
-        im = np.array([max(0, (val-reScaleIntercept)/reScaleSlope)
-                      for val in img.flatten()])
-        im = im.astype('uint16')
+        # Extract slice, scale and type cast pixel data
+        pixelData = np.array([max(0, (val-reScaleIntercept)/reScaleSlope)
+                      for val in img[z, :, :].flatten()])
+        pixelData = pixelData.astype('uint16')
         # Set window so that 95% of pixels are inside
         windowCenter, windowWidth = get95percentileWindow(
-                                            im, reScaleIntercept, reScaleSlope)
+                                            pixelData, reScaleIntercept, reScaleSlope)
         if dPar.frameList:
             # Get frame
-            frame = dPar.frameList[dPar.totalN*slice*len(imType)]
+            frame = dPar.frameList[dPar.totalN*slice*len(DICOMimgType)]
             iFrame = frame[1]
             if not multiframe:
                 ds = pydicom.read_file(frame[0])
@@ -171,8 +185,8 @@ def save(outDir, image, dPar, seriesDescription, seriesNumber,
             ds.BitsAllocated = 16
             ds.SmallestImagePixelValue = '\\x00\\x00'
             ds.LargestImagePixelValue = '\\xff\\xff'
-            ds.Columns = img.shape[1]
-            ds.Rows = img.shape[0]
+            ds.Columns = img.shape[2]
+            ds.Rows = img.shape[1]
             setTagValue(ds, 'Study Instance UID',
                         getSOPInstanceUID(), iFrame, 'UI')
             setTagValue(ds, 'Pixel Spacing', [dPar.dx, dPar.dy], iFrame, 'DS')
@@ -184,18 +198,18 @@ def save(outDir, image, dPar, seriesDescription, seriesNumber,
         setTagValue(ds, 'Echo Time', 0., iFrame, 'DS')
         setTagValue(ds, 'Protocol Name', 'Derived Image', iFrame, 'LO')
         setTagValue(ds, 'Series Description', seriesDescription, iFrame, 'LO')
-        setTagValue(ds, 'Smallest Pixel Value', np.min(im), iFrame)
-        setTagValue(ds, 'Largest Pixel Value', np.max(im), iFrame)
+        setTagValue(ds, 'Smallest Pixel Value', np.min(pixelData), iFrame)
+        setTagValue(ds, 'Largest Pixel Value', np.max(pixelData), iFrame)
         setTagValue(ds, 'Window Center', int(windowCenter), iFrame, 'DS')
         setTagValue(ds, 'Window Width', int(windowWidth), iFrame, 'DS')
         setTagValue(ds, 'Rescale Intercept', reScaleIntercept, iFrame, 'DS')
         setTagValue(ds, 'Rescale Slope', reScaleSlope, iFrame, 'DS')
 
         if multiframe:
-            imVol[z] = im
+            imVol[z] = pixelData
             frames.append(iFrame)
         else:
-            ds.PixelData = im
+            ds.PixelData = pixelData
             ds.save_as(filename)
 
     if multiframe:
@@ -206,6 +220,39 @@ def save(outDir, image, dPar, seriesDescription, seriesNumber,
         ds.PixelData = imVol
         filename = outDir+r'/0.dcm'
         ds.save_as(filename)
+
+
+# Zero pad back any cropped FOV
+def padCropped(croppedImage, dPar):
+    if 'cropFOV' in dPar:
+        image = np.zeros((dPar.nz, dPar.Ny, dPar.Nx))
+        x1, x2 = dPar.cropFOV[0], dPar.cropFOV[1]
+        y1, y2 = dPar.cropFOV[2], dPar.cropFOV[3]
+        image[:, y1:y2, x1:x2] = croppedImage
+        return image
+    else:
+        return croppedImage
+
+
+# Save all data in output as DICOM images
+def saveDICOM(output, dPar):
+    for series in output:
+        outDir = os.path.join(dPar.outDir, series['type'])
+        if not os.path.isdir(outDir):
+            os.mkdir(outDir)
+        print(r'Writing image{} to "{}"'.format('s'*(dPar.nz > 1), outDir))
+        img = padCropped(series['data'].reshape((dPar.nz, dPar.ny, dPar.nx)), dPar)
+        saveDICOMseries(outDir, series['type'], img, dPar)
+
+
+def save(output, dPar):
+    if not os.path.isdir(dPar.outDir):
+        os.mkdir(dPar.outDir)
+    
+    if dPar.fileType == 'DICOM':
+        saveDICOM(output, dPar)
+    else:
+        raise Exception('Unknown filetype: {}'.format(dPar.fileType))
 
 
 # Check if ds is a multiframe DICOM object
@@ -397,6 +444,7 @@ def getType(frameList, printType=False):
 
 # update dPar with info retrieved from the DICOM files including image data
 def updateDataParamsDICOM(dPar, files):
+    dPar.fileType = 'DICOM'
     frameList = []
     for file in files:
         ds = pydicom.read_file(file, stop_before_pixels=True)
@@ -532,6 +580,7 @@ def updateDataParamsDICOM(dPar, files):
 # update dPar with information retrieved from MATLAB file arranged
 # according to ISMRM fat-water toolbox
 def updateDataParamsMATLAB(dPar, file):
+    dPar.fileType = 'MatLab'
     try:
         mat = scipy.io.loadmat(file)
     except:
@@ -719,7 +768,7 @@ def setupModelParams(mPar, clockwisePrecession=False, temperature=None):
 
 
 # Update algorithm parameter object aPar and set default parameters
-def setupAlgoParams(aPar, N, FAC=False):
+def setupAlgoParams(aPar, N, nFAC=0):
     if 'nr2' in aPar:
         aPar.nR2 = int(aPar.nr2)
     else:
@@ -796,11 +845,23 @@ def setupAlgoParams(aPar, N, FAC=False):
     # For Fatty Acid Composition, create algorithmParams for two passes: aPar and aPar.pass2
     # First pass: use standard fat-water separation to determine B0 and R2*
     # Second pass: use B0- and R2*-maps from first pass
-    if FAC:
+    if nFAC > 0:
         aPar.pass2 = AttrDict(aPar)  # modify algoParams for pass 2:
         aPar.pass2.nICMiter = 0  # to omit ICM
         aPar.pass2.graphcutLevel = None  # to omit the graphcut
         aPar.pass2.graphcut = False
+    
+    aPar.output = ['wat', 'fat', 'ff', 'B0map']
+    if aPar.realEstimates:
+        aPar.output.append('phi')
+    if (aPar.nR2 > 1):
+        aPar.output.append('R2map')
+    if (nFAC > 2):
+        aPar.output.append('CL')
+    if (nFAC > 1):
+        aPar.output.append('PUD')
+    if (nFAC > 0):
+        aPar.output.append('UD')
 
 
 # Update data param object, set default parameters and read data from files
@@ -928,69 +989,49 @@ def getFat(rho, alpha):
     return fat
 
 
-# Core function: perform fat/water separation and save images
-def reconstructAndSave(dPar, aPar, mPar):
+# Perform fat/water separation and return prescribed output
+def reconstruct(dPar, aPar, mPar):
 
     # Do the fat/water separation
     rho, B0map, R2map = fatWaterSeparation.reconstruct(dPar, aPar, mPar)
     wat = rho[0]
     fat = getFat(rho, mPar.alpha)
-    
-    # Calculate the fat fraction
-    if aPar.magnDiscr:  # to avoid bias from noise
-        ff = np.real(fat / (wat + fat + sys.float_info.epsilon))
-    else:
-        ff = np.abs(fat)/(np.abs(wat) + np.abs(fat) + sys.float_info.epsilon)
+
+    # Prepare prescribed output
+    output = []
+    if 'wat' in aPar.output:
+        output.append({'type': 'wat', 'data': np.abs(wat)})    
+    if 'fat' in aPar.output:
+        output.append({'type': 'fat', 'data': np.abs(fat)})
+    if 'phi' in aPar.output:
+        output.append({'type': 'phi', 'data': np.angle(wat, deg=True)+180})
+    if 'ip' in aPar.output: # Calculate synthetic in-phase
+        output.append({'type': 'ip', 'data': np.abs(wat+fat)})
+    if 'op' in aPar.output: # Calculate synthetic opposed-phase
+        output.append({'type': 'op', 'data': np.abs(wat-fat)})
+    if 'ff' in aPar.output: # Calculate the fat fraction
+        if aPar.magnDiscr:  # to avoid bias from noise
+            output.append({'type': 'ff', 'data': 100 * np.real(fat / (wat + fat + sys.float_info.epsilon))})
+        else:
+            output.append({'type': 'ff', 'data': 100 * np.abs(fat)/(np.abs(wat) + np.abs(fat) + sys.float_info.epsilon)})
+    if 'B0map' in aPar.output:
+        output.append({'type': 'B0map', 'data': B0map})
+    if 'R2map' in aPar.output:
+        output.append({'type': 'R2map', 'data': R2map})
 
     # Do any Fatty Acid Composition in a second pass
     if mPar.nFAC > 0:
         rho = fatWaterSeparation.reconstruct(dPar, aPar.pass2, mPar.pass2, B0map, R2map)[0]
         CL, UD, PUD = getFattyAcidComposition(rho)
     
-    # Images to be saved:
-    bphi = aPar.realEstimates  # Inital phase phi
-    bwatfat = True  # Water-only and fat-only
-    bipop = False  # Synthetic in-phase and opposed-phase
-    bff = True  # Fat fraction
-    bB0map = True  # B0 off-resonance field map
+        if 'CL' in aPar.output:
+            output.append({'type': 'CL', 'data': CL})
+        if 'UD' in aPar.output:
+            output.append({'type': 'UD', 'data': UD})
+        if 'PUD' in aPar.output:
+            output.append({'type': 'PUD', 'data': PUD})
 
-    shiftB0map = False  # Shift the B0-map half a period
-    if shiftB0map:
-        Omega = 1.0/dPar.dt/gyro/dPar.B0
-        B0map += Omega/2
-        B0map[B0map > Omega] -= Omega # Wrap within period
-
-    if not os.path.isdir(dPar.outDir):
-        os.mkdir(dPar.outDir)
-        
-    if (bphi):
-        save(dPar.outDir+r'/phi', np.angle(wat, deg=True)+180, dPar,
-             'phi', 100)
-    if (bwatfat):
-        save(dPar.outDir+r'/wat', np.abs(wat), dPar, 'Water-only', 101)
-    if (bwatfat):
-        save(dPar.outDir+r'/fat', np.abs(fat), dPar, 'Fat-only', 102)
-    if (bipop):
-        save(dPar.outDir+r'/ip', np.abs(wat+fat), dPar, 'In-phase', 103)
-    if (bipop):
-        save(dPar.outDir+r'/op', np.abs(wat-fat), dPar, 'Opposed-phase', 104)
-    if (bff):
-        save(dPar.outDir+r'/ff', ff*100, dPar, 'Fat Fraction (%)', 105,
-             -100.*aPar.magnDiscr, 1/10)
-    if (aPar.nR2 > 1):
-        save(dPar.outDir+r'/R2map', R2map, dPar, 'R2*', 106)
-    if (bB0map):
-        save(dPar.outDir+r'/B0map', B0map*1000, dPar,
-             'Off-resonance (ppb)', 107)
-    if (mPar.nFAC > 2):
-        save(dPar.outDir+r'/CL', CL*100, dPar,
-             'FAC Chain length (1/100)', 108)
-    if (mPar.nFAC > 0):
-        save(dPar.outDir+r'/UD', UD*100, dPar,
-             'FAC Unsaturation degree (1/100)', 109)
-    if (mPar.nFAC > 1):
-        save(dPar.outDir+r'/PUD', PUD*100, dPar,
-             'FAC Polyunsaturation degree (1/100)', 110)
+    return output
 
 
 # Read configuration file
@@ -1010,7 +1051,7 @@ def main(dataParamFile, algoParamFile, modelParamFile, outDir=None):
     # Setup configuration objects
     setupDataParams(dPar, outDir)
     setupModelParams(mPar, dPar.clockwisePrecession, dPar.Temperature)
-    setupAlgoParams(aPar, dPar.N, mPar.nFAC>0)
+    setupAlgoParams(aPar, dPar.N, mPar.nFAC)
 
     print('B0 = {}'.format(round(dPar.B0, 2)))
     print('N = {}'.format(dPar.N))
@@ -1028,15 +1069,18 @@ def main(dataParamFile, algoParamFile, modelParamFile, outDir=None):
                 print('Processing slab {}/{} (slices {}-{})...'
                       .format(iSlab+1, len(slabs), slices[0]+1, slices[-1]+1))
                 slabDataParams = getSlabDataParams(dPar, slices, z)
-                reconstructAndSave(slabDataParams, aPar, mPar)
+                output = reconstruct(slabDataParams, aPar, mPar)
+                save(output, slabDataParams) # save data slab-wise to save memory
         else:
-            reconstructAndSave(dPar, aPar, mPar)
+            output = reconstruct(dPar, aPar, mPar)
+            save(output, dPar)
     else:
         for z, slice in enumerate(dPar.sliceList):
             print('Processing slice {} ({}/{})...'
                   .format(slice+1, z+1, len(dPar.sliceList)))
             sliceDataParams = getSliceDataParams(dPar, slice, z)
-            reconstructAndSave(sliceDataParams, aPar, mPar)
+            output = reconstruct(sliceDataParams, aPar, mPar)
+            save(output, sliceDataParams)
 
 
 if __name__ == '__main__':
