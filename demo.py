@@ -9,16 +9,13 @@ import time
 
 
 def getScore(case, dir):
-    # Read reconstructed DICOM-file
-    recFF = np.array([])
-    for file in os.listdir(dir):
-        try:
-            dcm = pydicom.read_file(os.path.join(dir, file))
-        except:
-            raise Exception('File not found: {}'.format(file))
-        reScaleSlope = dcm[0x00281053].value / 100  # FF in %
-        recFF = np.concatenate(
-            (recFF, dcm.pixel_array.transpose().flatten() * reScaleSlope))
+    # Read reconstructed MatLab-file
+    file = os.path.join(dir, '0.mat')
+    try:
+        mat = scipy.io.loadmat(file)
+    except:
+        raise Exception('Could not read MATLAB file {}'.format(file))
+    recFF = mat['ff'].flatten(order='F')/100
     recFF.shape = recFF.shape + (1,)
     # Read reference MATLAB-file
     refFile = r'./challenge/refdata.mat'
@@ -63,7 +60,7 @@ if __name__ == '__main__':
         outDir = r'./challenge/{}_REC'.format(str(case).zfill(2))
         t = time.time()
         FWQPBO.main(dataParamsFile, algoParamsFile, modelParamsFile, outDir)
-        results.append((case, getScore(case, outDir + '/ff'), time.time() - t))
+        results.append((case, getScore(case, outDir), time.time() - t))
 
     print()
     for case, score, recTime in results:
