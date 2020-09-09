@@ -157,23 +157,6 @@ def getSlabDataParams(dPar, slices, z):
     return slabDataParams
 
 
-# group slices in sliceList in slabs of reconSlab contiguous slices
-def getSlabs(sliceList, reconSlab):
-    slabs = []
-    slices = []
-    pos = 0
-    for z, slice in enumerate(sliceList):
-        # start a new slab
-        if slices and (len(slices) == reconSlab or not slice == slices[-1]+1):
-            slabs.append((slices, pos))
-            slices = [slice]
-            pos = z
-        else:
-            slices.append(slice)
-    slabs.append((slices, pos))
-    return slabs
-
-
 # Update algorithm parameter object aPar and set default parameters
 def setupAlgoParams(aPar, N, nFAC=0):
     if 'nr2' in aPar:
@@ -370,6 +353,23 @@ def setupModelParams(mPar, clockwisePrecession=False, temperature=None):
         mPar.M = mPar.alpha.shape[0]
 
 
+# group slices in sliceList in slabs of reconSlab contiguous slices
+def getSlabs(sliceList, reconSlab):
+    slabs = []
+    slices = []
+    pos = 0
+    for z, slice in enumerate(sliceList):
+        # start a new slab
+        if slices and (len(slices) == reconSlab or not slice == slices[-1]+1):
+            slabs.append((slices, pos))
+            slices = [slice]
+            pos = z
+        else:
+            slices.append(slice)
+    slabs.append((slices, pos))
+    return slabs
+
+
 # Convert string on form "0-3, 5, 8-22" to set of integers
 def readIntString(str):
     ints = []
@@ -445,6 +445,8 @@ def setupDataParams(dPar, outDir=None):
             MATLAB.updateDataParams(dPar, dPar.files[0])
         else:
             raise Exception('No valid files found')
+    if 'reconSlab' in dPar:
+        dPar.slabs = getSlabs(dPar.sliceList, dPar.reconSlab)
 
 
 # Read configuration file
@@ -476,11 +478,10 @@ def main(dataParamFile, algoParamFile, modelParamFile, outDir=None):
 
     # Run fat/water processing    
     if aPar.use3D or len(dPar.sliceList) == 1:
-        if 'reconSlab' in dPar:
-            slabs = getSlabs(dPar.sliceList, dPar.reconSlab)
-            for iSlab, (slices, z) in enumerate(slabs):
+        if 'slabs' in dPar:
+            for iSlab, (slices, z) in enumerate(dPar.slabs):
                 print('Processing slab {}/{} (slices {}-{})...'
-                      .format(iSlab+1, len(slabs), slices[0]+1, slices[-1]+1))
+                      .format(iSlab+1, len(dPar.slabs), slices[0]+1, slices[-1]+1))
                 slabDataParams = getSlabDataParams(dPar, slices, z)
                 output = reconstruct(slabDataParams, aPar, mPar)
                 save(output, slabDataParams) # save data slab-wise to save memory
