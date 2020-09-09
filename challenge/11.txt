@@ -1,5 +1,4 @@
 [data parameters]
-files = ./challenge/11.mat
-outDir = ./challenge/11_REC
-#sliceList = 0
+files = ./11.mat
+outDir = ./11_REC
 reScale = 10.

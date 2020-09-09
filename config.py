@@ -2,7 +2,7 @@ import configparser
 import DICOM
 import MATLAB
 import numpy as np
-import os
+from pathlib import Path
 
 
 # Helper class for convenient reading of config files
@@ -264,21 +264,13 @@ def readIntString(str):
                     ints.append(i)
     return list(set(ints))
 
-
-# Get list of all files in directories in dirList
-def getFiles(dirList):
-    files = []  # Get list of files:
-    for dir in dirList:
-        files = files+[os.path.join(dir, file) for file in os.listdir(dir)]
-    return files
-
     
 # Update data param object, set default parameters and read data from files
 def setupDataParams(dPar, outDir=None):
     if outDir:
-        dPar.outDir = outDir
+        dPar.outDir = Path(outDir)
     elif 'outdir' in dPar:
-        dPar.outDir = dPar.outdir
+        dPar.outDir = Path(dPar.outdir)
     else:
         raise Exception('No outDir defined')
     # Rescaling might be needed for datasets with too small/large pixel values
@@ -307,17 +299,18 @@ def setupDataParams(dPar, outDir=None):
     else:
         dPar.offresCenter = 0.
     if 'files' in dPar:
-        dPar.files = dPar.files.split(',')
+        dPar.files = [dPar.configPath / file for file in dPar.files.split(',') if Path(dPar.configPath / file).is_file()]
     else:
         dPar.files = []
     if 'dirs' in dPar:
-        dPar.dirs = dPar.dirs.split(',')
-        dPar.files += getFiles(dPar.dirs)
+        dPar.dirs = [dPar.configPath / dir for dir in dPar.dirs.split(',') if Path(dPar.configPath / dir).is_dir()]
+        for path in dPar.dirs:
+            dPar.files += [obj for obj in path.iterdir() if obj.is_file()]
     validFiles = DICOM.getValidFiles(dPar['files'])
     if validFiles:
         DICOM.updateDataParams(dPar, validFiles)
     else:
-        if len(dPar.files) == 1 and dPar.files[0][-4:] == '.mat':
+        if len(dPar.files) == 1 and dPar.files[0].suffix == '.mat':
             MATLAB.updateDataParams(dPar, dPar.files[0])
         else:
             raise Exception('No valid files found')
@@ -327,6 +320,9 @@ def setupDataParams(dPar, outDir=None):
 
 # Read configuration file
 def readConfig(file, section):
+    file = Path(file)
     config = configparser.ConfigParser()
     config.read(file)
-    return AttrDict(config[section])
+    adict = AttrDict(config[section])
+    adict.configPath = file.parent
+    return adict

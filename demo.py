@@ -4,13 +4,13 @@ import main
 import numpy as np
 import pydicom
 import scipy.io
-import os
 import time
+from pathlib import Path
 
 
-def getScore(case, dir):
+def getScore(case, dir, refFile):
     # Read reconstructed MATLAB-file
-    file = os.path.join(dir, '0.mat')
+    file = dir / '0.mat'
     try:
         mat = scipy.io.loadmat(file)
     except:
@@ -18,7 +18,6 @@ def getScore(case, dir):
     recFF = mat['ff'].flatten(order='F')/100
     recFF.shape = recFF.shape + (1,)
     # Read reference MATLAB-file
-    refFile = r'./challenge/refdata.mat'
     try:
         mat = scipy.io.loadmat(refFile)
     except:
@@ -33,34 +32,37 @@ def getScore(case, dir):
 
 if __name__ == '__main__':
 
-    if not os.path.isfile(r'./challenge/refdata.mat'):
-        url = r'"https://dl.dropboxusercontent.com/u/5131732/' + \
-            r'ISMRM_Challenge/refdata.mat"'
-        raise Exception(r'Please download ISMRM 2012 challenge reference data '
-                        'from {} and put in "challenge" subdirectory'.format(url))
+    fwqpboPath = Path(__file__).resolve().parent.absolute()
+    challengePath = fwqpboPath / './challenge'
 
-    modelParamsFile = r'./modelParams.txt'
+    refFile = challengePath / './refdata.mat'
+    if not refFile.is_file():
+        url = 'https://challenge.ismrm.org/u/5131732/ISMRM_Challenge/refdata.mat'
+        raise Exception('ISMRM 2012 challenge reference data file was not found at: {}. '
+                        'Please download from: {}.'.format(refFile.absolute(), url))
+
+    modelParamsFile = fwqpboPath / './modelParams.txt'
     cases = [1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
+    cases = [17]
 
     for case in cases:
-        if not os.path.isfile(r'./challenge/{}.mat'.format(str(case).zfill(2))):
-            url = r'"http://dl.dropbox.com/u/5131732/' + \
-                r'ISMRM_Challenge/data_matlab.zip"'
-            raise Exception(
-                r'Please download ISMRM 2012 challenge datasets from {} '
-                r'and put in "challenge" subdirectory'.format(url))
+        caseFile = challengePath / './{}.mat'.format(str(case).zfill(2))
+        if not caseFile.is_file():
+            url = 'https://challenge.ismrm.org/u/5131732/ISMRM_Challenge/data_matlab.zip'
+            raise Exception('ISMRM 2012 challenge dataset {} was not found at: {}. '
+                            'Please download from: {}.'.format(case, caseFile.absolute(), url))
 
     results = []
     for case in cases:
-        dataParamsFile = r'./challenge/{}.txt'.format(case)
+        dataParamsFile = challengePath / './{}.txt'.format(case)
         if case == 9:
-            algoParamsFile = r'./algoParams2D.txt'
+            algoParamsFile = fwqpboPath / './algoParams2D.txt'
         else:
-            algoParamsFile = r'./algoParams3D.txt'
-        outDir = r'./challenge/{}_REC'.format(str(case).zfill(2))
+            algoParamsFile = fwqpboPath / './algoParams3D.txt'
+        outDir = challengePath / './{}_REC'.format(str(case).zfill(2))
         t = time.time()
         main.main(dataParamsFile, algoParamsFile, modelParamsFile, outDir)
-        results.append((case, getScore(case, outDir), time.time() - t))
+        results.append((case, getScore(case, outDir, refFile), time.time() - t))
 
     print()
     for case, score, recTime in results:

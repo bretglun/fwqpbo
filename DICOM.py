@@ -1,7 +1,7 @@
 import pydicom
 import datetime
 import numpy as np
-import os
+from pathlib import Path
 
 
 gyro = 42.58  # 1H gyromagnetic ratio
@@ -136,7 +136,7 @@ def getValidFiles(files, printOutput=False):
     validFiles = []
     for file in files:
         try:
-            ds = pydicom.read_file(file, stop_before_pixels=True)
+            ds = pydicom.read_file(str(file), stop_before_pixels=True)
         except:
             if printOutput:
                 print('Could not read file: {}'.format(file))
@@ -207,7 +207,7 @@ def updateDataParams(dPar, files):
     dPar.fileType = 'DICOM'
     frameList = []
     for file in files:
-        ds = pydicom.read_file(file, stop_before_pixels=True)
+        ds = pydicom.read_file(str(file), stop_before_pixels=True)
         multiframe = isMultiFrame(ds)
         if multiframe:
             if len(files) > 1:
@@ -264,7 +264,7 @@ def updateDataParams(dPar, files):
     img = []
     if multiframe:
         file = frameList[0][0]
-        dcm = pydicom.read_file(file)
+        dcm = pydicom.read_file(str(file))
     for n in dPar.echoes:
         for slice in dPar.sliceList:
             i = (dPar.N*slice+n)*len(type)
@@ -283,8 +283,8 @@ def updateDataParams(dPar, files):
                 else:
                     magnFile = frameList[magnFrame][0]
                     phaseFile = frameList[phaseFrame][0]
-                    mDcm = pydicom.read_file(magnFile)
-                    pDcm = pydicom.read_file(phaseFile)
+                    mDcm = pydicom.read_file(str(magnFile))
+                    pDcm = pydicom.read_file(str(phaseFile))
                     magn = mDcm.pixel_array[y1:y2, x1:x2].flatten()
                     phase = pDcm.pixel_array[y1:y2, x1:x2].flatten()
                     # Abs val needed for Siemens data to get correct phase sign
@@ -318,8 +318,8 @@ def updateDataParams(dPar, files):
                 else:
                     realFile = frameList[realFrame][0]
                     imagFile = frameList[imagFrame][0]
-                    rDcm = pydicom.read_file(realFile)
-                    iDcm = pydicom.read_file(imagFile)
+                    rDcm = pydicom.read_file(str(realFile))
+                    iDcm = pydicom.read_file(str(imagFile))
                     realPart = rDcm.pixel_array[y1:y2, x1:x2].flatten()
                     imagPart = iDcm.pixel_array[y1:y2, x1:x2].flatten()
                     # Assumes real and imaginary slope/intercept are equal
@@ -394,13 +394,13 @@ def saveSeries(outDir, imgType, img, dPar):
     multiframe = dPar.frameList and \
         len(set([frame[0] for frame in dPar.frameList])) == 1
     if multiframe:
-        ds = pydicom.read_file(dPar.frameList[0][0])
+        ds = pydicom.read_file(str(dPar.frameList[0][0]))
         imVol = np.empty([dPar.nz, dPar.ny*dPar.nx], dtype='uint16')
         frames = []
     if dPar.frameList:
         DICOMimgType = getType(dPar.frameList)
     for z, slice in enumerate(dPar.sliceList):
-        filename = outDir+r'/{}.dcm'.format(slice)
+        filename = outDir / './{}.dcm'.format(slice)
         # Extract slice, scale and type cast pixel data
         pixelData = np.array([max(0, (val-reScaleIntercept)/reScaleSlope)
                       for val in img[:, :, z].flatten()])
@@ -413,7 +413,7 @@ def saveSeries(outDir, imgType, img, dPar):
             frame = dPar.frameList[dPar.totalN*slice*len(DICOMimgType)]
             iFrame = frame[1]
             if not multiframe:
-                ds = pydicom.read_file(frame[0])
+                ds = pydicom.read_file(str(frame[0]))
         else:
             iFrame = None
             # Create new DICOM images from scratch
@@ -464,7 +464,7 @@ def saveSeries(outDir, imgType, img, dPar):
             frames.append(iFrame)
         else:
             ds.PixelData = pixelData
-            ds.save_as(filename)
+            ds.save_as(str(filename))
 
     if multiframe:
         setTagValue(ds, 'SOP Instance UID', getSOPInstanceUID())
@@ -472,15 +472,14 @@ def saveSeries(outDir, imgType, img, dPar):
         ds[tagDict['Frame sequence']].value = \
             [ds[tagDict['Frame sequence']].value[frame] for frame in frames]
         ds.PixelData = imVol
-        filename = outDir+r'/0.dcm'
-        ds.save_as(filename)
+        filename = outDir / './0.dcm'
+        ds.save_as(str(filename))
 
 
 # Save all data in output as DICOM images
 def save(output, dPar):
     for seriesType in output:
-        outDir = os.path.join(dPar.outDir, seriesType)
-        if not os.path.isdir(outDir):
-            os.mkdir(outDir)
+        outDir = dPar.outDir / seriesType
+        outDir.mkdir(parents=True, exist_ok=True)
         print(r'Writing image{} to "{}"'.format('s'*(dPar.nz > 1), outDir))
         saveSeries(outDir, seriesType, output[seriesType], dPar)

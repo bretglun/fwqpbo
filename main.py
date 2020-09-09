@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import numpy as np
-import os
 import sys
 import optparse
 import config
@@ -26,9 +25,6 @@ def padCropped(croppedImage, dPar):
 
 
 def save(output, dPar):
-    if not os.path.isdir(dPar.outDir):
-        os.mkdir(dPar.outDir)
-    
     for seriesType in output: # zero pad if was cropped and reshape to row,col,slice
         output[seriesType] = np.moveaxis(padCropped(output[seriesType].reshape((dPar.nz, dPar.ny, dPar.nx)), dPar), 0, -1)
     

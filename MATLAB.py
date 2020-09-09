@@ -1,5 +1,6 @@
 import scipy.io
 import numpy as np
+from pathlib import Path
 
 
 # update dPar with information retrieved from MATLAB file
@@ -76,6 +77,7 @@ def updateDataParams(dPar, file):
 
 # Save output as MATLAB arrays
 def save(output, dPar):
-    filename = dPar.outDir+r'/{}.mat'.format(dPar.sliceList[0])
+    dPar.outDir.mkdir(parents=True, exist_ok=True)
+    filename = dPar.outDir / './{}.mat'.format(dPar.sliceList[0])
+    print(r'Writing images to "{}"'.format(filename))
     scipy.io.savemat(filename, output)
-    
