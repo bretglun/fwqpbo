@@ -9,7 +9,7 @@ import time
 
 
 def getScore(case, dir):
-    # Read reconstructed MatLab-file
+    # Read reconstructed MATLAB-file
     file = os.path.join(dir, '0.mat')
     try:
         mat = scipy.io.loadmat(file)
