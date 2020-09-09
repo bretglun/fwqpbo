@@ -149,7 +149,7 @@ def saveDICOMseries(outDir, imgType, img, dPar):
         filename = outDir+r'/{}.dcm'.format(slice)
         # Extract slice, scale and type cast pixel data
         pixelData = np.array([max(0, (val-reScaleIntercept)/reScaleSlope)
-                      for val in img[z, :, :].flatten()])
+                      for val in img[:, :, z].flatten()])
         pixelData = pixelData.astype('uint16')
         # Set window so that 95% of pixels are inside
         windowCenter, windowWidth = get95percentileWindow(
@@ -185,8 +185,8 @@ def saveDICOMseries(outDir, imgType, img, dPar):
             ds.BitsAllocated = 16
             ds.SmallestImagePixelValue = '\\x00\\x00'
             ds.LargestImagePixelValue = '\\xff\\xff'
-            ds.Columns = img.shape[2]
-            ds.Rows = img.shape[1]
+            ds.Columns = img.shape[1]
+            ds.Rows = img.shape[0]
             setTagValue(ds, 'Study Instance UID',
                         getSOPInstanceUID(), iFrame, 'UI')
             setTagValue(ds, 'Pixel Spacing', [dPar.dx, dPar.dy], iFrame, 'DS')
@@ -237,26 +237,25 @@ def padCropped(croppedImage, dPar):
 # Save numpy array as MatLab array
 def saveMatLab(output, dPar):
     filename = dPar.outDir+r'/{}.mat'.format(dPar.sliceList[0])
-    arrays = {}
-    for series in output:
-        arrays[series['type']] = np.moveaxis(padCropped(series['data'].reshape((dPar.nz, dPar.ny, dPar.nx)), dPar), 0, -1)
-    scipy.io.savemat(filename, arrays)
+    scipy.io.savemat(filename, output)
 
 
 # Save all data in output as DICOM images
 def saveDICOM(output, dPar):
-    for series in output:
-        outDir = os.path.join(dPar.outDir, series['type'])
+    for seriesType in output:
+        outDir = os.path.join(dPar.outDir, seriesType)
         if not os.path.isdir(outDir):
             os.mkdir(outDir)
         print(r'Writing image{} to "{}"'.format('s'*(dPar.nz > 1), outDir))
-        img = padCropped(series['data'].reshape((dPar.nz, dPar.ny, dPar.nx)), dPar)
-        saveDICOMseries(outDir, series['type'], img, dPar)
+        saveDICOMseries(outDir, seriesType, output[seriesType], dPar)
 
 
 def save(output, dPar):
     if not os.path.isdir(dPar.outDir):
         os.mkdir(dPar.outDir)
+    
+    for seriesType in output: # zero pad if was cropped and reshape to row,col,slice
+        output[seriesType] = np.moveaxis(padCropped(output[seriesType].reshape((dPar.nz, dPar.ny, dPar.nx)), dPar), 0, -1)
     
     if dPar.fileType == 'DICOM':
         saveDICOM(output, dPar)
@@ -1009,26 +1008,26 @@ def reconstruct(dPar, aPar, mPar):
     fat = getFat(rho, mPar.alpha)
 
     # Prepare prescribed output
-    output = []
+    output = {}
     if 'wat' in aPar.output:
-        output.append({'type': 'wat', 'data': np.abs(wat)})    
+        output['wat'] = np.abs(wat)
     if 'fat' in aPar.output:
-        output.append({'type': 'fat', 'data': np.abs(fat)})
+        output['fat'] = np.abs(fat)
     if 'phi' in aPar.output:
-        output.append({'type': 'phi', 'data': np.angle(wat, deg=True)+180})
+        output['phi'] = np.angle(wat, deg=True) + 180
     if 'ip' in aPar.output: # Calculate synthetic in-phase
-        output.append({'type': 'ip', 'data': np.abs(wat+fat)})
+        output['ip'] = np.abs(wat+fat)
     if 'op' in aPar.output: # Calculate synthetic opposed-phase
-        output.append({'type': 'op', 'data': np.abs(wat-fat)})
+        output['op'] = np.abs(wat-fat)
     if 'ff' in aPar.output: # Calculate the fat fraction
         if aPar.magnDiscr:  # to avoid bias from noise
-            output.append({'type': 'ff', 'data': 100 * np.real(fat / (wat + fat + sys.float_info.epsilon))})
+            output['ff'] = 100 * np.real(fat / (wat + fat + sys.float_info.epsilon))
         else:
-            output.append({'type': 'ff', 'data': 100 * np.abs(fat)/(np.abs(wat) + np.abs(fat) + sys.float_info.epsilon)})
+            output['ff'] = 100 * np.abs(fat)/(np.abs(wat) + np.abs(fat) + sys.float_info.epsilon)
     if 'B0map' in aPar.output:
-        output.append({'type': 'B0map', 'data': B0map})
+        output['B0map'] = B0map
     if 'R2map' in aPar.output:
-        output.append({'type': 'R2map', 'data': R2map})
+        output['R2map'] = R2map
 
     # Do any Fatty Acid Composition in a second pass
     if mPar.nFAC > 0:
@@ -1036,11 +1035,11 @@ def reconstruct(dPar, aPar, mPar):
         CL, UD, PUD = getFattyAcidComposition(rho)
     
         if 'CL' in aPar.output:
-            output.append({'type': 'CL', 'data': CL})
+            output['CL'] = CL
         if 'UD' in aPar.output:
-            output.append({'type': 'UD', 'data': UD})
+            output['UD'] = UD
         if 'PUD' in aPar.output:
-            output.append({'type': 'PUD', 'data': PUD})
+            output['PUD'] = PUD
 
     return output
 
