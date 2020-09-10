@@ -170,11 +170,11 @@ if __name__ == '__main__':
     # Initiate command line parser
     p = optparse.OptionParser()
     p.add_option('--dataParamFile', '-d', default='',  type="string",
-                 help="Name of data parameter configuration text file")
+                 help="File path of data parameter configuration file")
     p.add_option('--algoParamFile', '-a', default='',  type="string",
-                 help="Name of algorithm parameter configuration text file")
+                 help="File path of algorithm parameter configuration file")
     p.add_option('--modelParamFile', '-m', default='',  type="string",
-                 help="Name of model parameter configuration text file")
+                 help="File path of model parameter configuration file")
 
     # Parse command line
     options, arguments = p.parse_args()
