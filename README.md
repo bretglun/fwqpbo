@@ -1,4 +1,5 @@
 *Copyright (c) 2016–2020 Johan Berglund*
+
 *FWQPBO is distributed under the terms of the GNU General Public License*
 
 *This program is free software: you can redistribute it and/or modify*
