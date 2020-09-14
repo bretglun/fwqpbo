@@ -43,7 +43,6 @@ if __name__ == '__main__':
 
     modelParamsFile = fwqpboPath / './modelParams.txt'
     cases = [1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
-    cases = [17]
 
     for case in cases:
         caseFile = challengePath / './{}.mat'.format(str(case).zfill(2))
