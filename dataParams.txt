@@ -1,8 +1,0 @@
-[data parameters]
-files = .\challenge\01.mat
-#dirs = .\data\dicom1, .\data\dicom2
-outDir = .\test
-reScale = 0.0001
-#sliceList = 0,1,2
-#echoes = 0,1,2
-#temp = 37

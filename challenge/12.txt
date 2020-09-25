@@ -1,4 +1,0 @@
-[data parameters]
-files = ./12.mat
-outDir = ./12_REC
-reScale = 10.

@@ -41,7 +41,7 @@ if __name__ == '__main__':
         raise Exception('ISMRM 2012 challenge reference data file was not found at: {}. '
                         'Please download from: {}.'.format(refFile.absolute(), url))
 
-    modelParamsFile = fwqpboPath / './modelParams.txt'
+    modelParamsFile = fwqpboPath / './modelParams.yml'
     cases = [1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
 
     for case in cases:
@@ -53,11 +53,11 @@ if __name__ == '__main__':
 
     results = []
     for case in cases:
-        dataParamsFile = challengePath / './{}.txt'.format(case)
+        dataParamsFile = challengePath / './{}.yml'.format(case)
         if case == 9:
-            algoParamsFile = fwqpboPath / './algoParams2D.txt'
+            algoParamsFile = fwqpboPath / './algoParams2D.yml'
         else:
-            algoParamsFile = fwqpboPath / './algoParams3D.txt'
+            algoParamsFile = fwqpboPath / './algoParams3D.yml'
         outDir = challengePath / './{}_REC'.format(str(case).zfill(2))
         t = time.time()
         main.main(dataParamsFile, algoParamsFile, modelParamsFile, outDir)

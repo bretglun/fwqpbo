@@ -1,4 +1,0 @@
-[data parameters]
-files = ./04.mat
-outDir = ./04_REC
-reScale = 0.0001
