@@ -39,12 +39,11 @@ reconstructs [data from the ISMRM 2012 challenge (data download required)
 HOW TO CITE
 -------------------------------------------------------------------------------
 Berglund J and Skorpil M. *Multi-scale graph-cut algorithm for efficient water-
-fat separation*. Magn Reson Med, 78(3):941--949, 2017. [doi: 10.1002/mrm.26479]
+fat separation*. Magn Reson Med, 78(3):941-949, 2017. [doi: 10.1002/mrm.26479]
 
 DEPENDENCIES
 -------------------------------------------------------------------------------
-FWQPBO was written in Python 3.6, using packages SciPy 1.4.1, NumPy 1.18.1, 
-pyDicom 1.1.0, thinqpbo 0.1.3.
+See [./environment.yml](environment.yml)
 
 CONTACT INFORMATION
 -------------------------------------------------------------------------------
