@@ -185,7 +185,7 @@ def setupModelParams(mPar, clockwisePrecession=False, temperature=None):
         mPar.nFAC = int(mPar.nfac)
     else:
         mPar.nFAC = 0
-    if mPar.nFAC > 0 and mPar.P is not 11:
+    if mPar.nFAC > 0 and mPar.P != 11:
         raise Exception(
             'FAC excpects exactly one water and ten triglyceride resonances')
     mPar.M = 2+mPar.nFAC
