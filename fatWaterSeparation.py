@@ -365,14 +365,14 @@ def modulationVectors(nB0, N):
 
 # Construct matrix RA
 def modelMatrix(dPar, mPar, R2):
-    RA = np.zeros(shape=(dPar.N, mPar.M), dtype=complex)
-    for n in range(dPar.N):
-        t = dPar.t1 + n * dPar.dt
-        for m in range(mPar.M): # Loop over components/species
-            for p in range(mPar.P):  # Loop over all resonances
+    RA = np.zeros(shape=(dPar['N'], mPar['M']), dtype=complex)
+    for n in range(dPar['N']):
+        t = dPar['t1'] + n * dPar['dt']
+        for m in range(mPar['M']): # Loop over components/species
+            for p in range(mPar['P']):  # Loop over all resonances
                 # Chemical shift between water and peak m (in ppm)
-                omega = 2. * np.pi * gyro * dPar.B0 * (mPar.CS[p] - mPar.CS[0])
-                RA[n, m] += mPar.alpha[m][p]*np.exp(complex(-(t-dPar.t1)*R2, t*omega))
+                omega = 2. * np.pi * gyro * dPar['B0'] * (mPar['CS'][p] - mPar['CS'][0])
+                RA[n, m] += mPar['alpha'][m][p]*np.exp(complex(-(t-dPar['t1'])*R2, t*omega))
     return RA
 
 
@@ -401,82 +401,82 @@ def getMeanEnergy(Y):
 
 # Perform the actual reconstruction
 def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
-    determineB0 = aPar.graphcutLevel is not None or aPar.nICMiter > 0
-    determineR2 = (aPar.nR2 > 1) and (R2map is None)
+    determineB0 = aPar['graphcutLevel'] is not None or aPar['nICMiter'] > 0
+    determineR2 = (aPar['nR2'] > 1) and (R2map is None)
 
-    nVxl = dPar.nx*dPar.ny*dPar.nz
+    nVxl = dPar['nx']*dPar['ny']*dPar['nz']
 
-    Y = dPar.img
-    Y.shape = (dPar.N, nVxl)
+    Y = dPar['img']
+    Y.shape = (dPar['N'], nVxl)
 
     # Prepare matrices
     # Off-resonance modulation vectors (one for each off-resonance value)
-    B, Bh = modulationVectors(aPar.nB0, dPar.N)
+    B, Bh = modulationVectors(aPar['nB0'], dPar['N'])
     RA, RAp, C, Qp = [], [], [], []
     D = None
-    if aPar.realEstimates:
+    if aPar['realEstimates']:
         D = []  # Matrix for calculating phi (needed for real-valued estimates)
-    for r in range(aPar.nR2):
-        R2 = r*aPar.R2step
+    for r in range(aPar['nR2']):
+        R2 = r*aPar['R2step']
         RA.append(modelMatrix(dPar, mPar, R2))
-        if aPar.realEstimates:
+        if aPar['realEstimates']:
             D.append([])
             Dtmp = getDtmp(RA[r])
-            for b in range(aPar.nB0):
+            for b in range(aPar['nB0']):
                 D[r].append(np.dot(B[b].conj(), np.dot(Dtmp, Bh[b])))
             RA[r] = np.concatenate((np.real(RA[r]), np.imag(RA[r])))
         RAp.append(np.linalg.pinv(RA[r]))
 
-    if aPar.realEstimates:
-        for b in range(aPar.nB0):
+    if aPar['realEstimates']:
+        for b in range(aPar['nB0']):
             B[b] = realify(B[b])
             Bh[b] = realify(Bh[b])
-    for r in range(aPar.nR2):
+    for r in range(aPar['nR2']):
         C.append([])
         Qp.append([])
         # Null space projection matrix
-        proj = np.eye(dPar.N*(1+aPar.realEstimates))-np.dot(RA[r], RAp[r])
-        for b in range(aPar.nB0):
+        proj = np.eye(dPar['N']*(1+aPar['realEstimates']))-np.dot(RA[r], RAp[r])
+        for b in range(aPar['nB0']):
             C[r].append(np.dot(np.dot(B[b], proj), Bh[b]))
             Qp[r].append(np.dot(RAp[r], Bh[b]))
 
     # For B0 index -> off-resonance in ppm
-    B0step = 1.0/aPar.nB0/np.abs(dPar.dt)/gyro/dPar.B0
+    B0step = 1.0/aPar['nB0']/np.abs(dPar['dt'])/gyro/dPar['B0']
     if determineB0:
         V = []  # Precalculate discontinuity costs
-        for b in range(aPar.nB0):
-            V.append(min(b**2, (b-aPar.nB0)**2))
+        for b in range(aPar['nB0']):
+            V.append(min(b**2, (b-aPar['nB0'])**2))
         V = np.array(V)
 
-        level = {'L': 0, 'nx': dPar.nx, 'ny': dPar.ny, 'nz': dPar.nz,
+        level = {'L': 0, 'nx': dPar['nx'], 'ny': dPar['ny'], 'nz': dPar['nz'],
                  'sx': 1, 'sy': 1, 'sz': 1,
-                 'dx': dPar.dx, 'dy': dPar.dy, 'dz': dPar.dz}
-        J = getB0Residuals(Y, C, aPar.nB0, nVxl, aPar.iR2cand, D)
-        offresPenalty = aPar.offresPenalty
-        if aPar.offresPenalty > 0:
+                 'dx': dPar['dx'], 'dy': dPar['dy'], 'dz': dPar['dz']}
+        J = getB0Residuals(Y, C, aPar['nB0'], nVxl, aPar['iR2cand'], D)
+        offresPenalty = aPar['offresPenalty']
+        if aPar['offresPenalty'] > 0:
             offresPenalty *= getMeanEnergy(Y)
 
-        dB0 = calculateFieldMap(aPar.nB0, level, aPar.graphcutLevel,
-                                aPar.multiScale, aPar.maxICMupdate,
-                                aPar.nICMiter, J, V, aPar.mu,
-                                offresPenalty, int(dPar.offresCenter/B0step))
+        dB0 = calculateFieldMap(aPar['nB0'], level, aPar['graphcutLevel'],
+                                aPar['multiScale'], aPar['maxICMupdate'],
+                                aPar['nICMiter'], J, V, aPar['mu'],
+                                offresPenalty, int(dPar['offresCenter']/B0step))
     elif B0map is None:
         dB0 = np.zeros(nVxl, dtype=int)
     else:
         dB0 = np.array(B0map/B0step, dtype=int)
 
     if determineR2:
-        J = getR2Residuals(Y, dB0, C, aPar.nB0, aPar.nR2, nVxl, D)
+        J = getR2Residuals(Y, dB0, C, aPar['nB0'], aPar['nR2'], nVxl, D)
         R2 = greedyR2(J, nVxl)
     elif R2map is None:
         R2 = np.zeros(nVxl, dtype=int)
     else:
-        R2 = np.array(R2map/aPar.R2step, dtype=int)
+        R2 = np.array(R2map/aPar['R2step'], dtype=int)
 
     # Find least squares solution given dB0 and R2
-    rho = np.zeros(shape=(mPar.M, nVxl), dtype=complex)
-    for r in range(aPar.nR2):
-        for b in range(aPar.nB0):
+    rho = np.zeros(shape=(mPar['M'], nVxl), dtype=complex)
+    for r in range(aPar['nR2']):
+        for b in range(aPar['nB0']):
             vxls = (dB0 == b)*(R2 == r)
             if not D:  # complex estimates
                 y = Y[:, vxls]
@@ -494,7 +494,7 @@ def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
         R2map = np.empty(nVxl)
 
     if determineR2:
-        R2map[:] = R2*aPar.R2step
+        R2map[:] = R2*aPar['R2step']
 
     if determineB0:
         B0map[:] = dB0*B0step

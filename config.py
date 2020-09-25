@@ -3,131 +3,98 @@ import DICOM
 import MATLAB
 import numpy as np
 from pathlib import Path
-
-
-# Helper class for convenient reading of config files
-class AttrDict(dict):
-    def __init__(self, *args, **kwargs):
-        super(AttrDict, self).__init__(*args, **kwargs)
-        self.__dict__ = self
+import yaml
 
 
 # extract data parameter object representing a single slice
 def getSliceDataParams(dPar, slice, z):
-    sliceDataParams = AttrDict(dPar)
-    sliceDataParams.sliceList = [slice]
-    sliceDataParams.img = dPar.img.reshape(
-        dPar.N, dPar.nz, dPar.ny*dPar.nx)[:, z, :].flatten()
-    sliceDataParams.nz = 1
+    sliceDataParams = dict(dPar)
+    sliceDataParams['sliceList'] = [slice]
+    sliceDataParams['img'] = dPar['img'].reshape(
+        dPar['N'], dPar['nz'], dPar['ny']*dPar['nx'])[:, z, :].flatten()
+    sliceDataParams['nz'] = 1
     return sliceDataParams
 
 
 # extract dPar object representing a slab of contiguous slices starting at z
 def getSlabDataParams(dPar, slices, z):
-    slabDataParams = AttrDict(dPar)
-    slabDataParams.sliceList = slices
+    slabDataParams = dict(dPar)
+    slabDataParams['sliceList'] = slices
     slabSize = len(slices)
-    slabDataParams.img = dPar.img.reshape(
-        dPar.N, dPar.nz, dPar.ny*dPar.nx)[:, z:z+slabSize, :].flatten()
-    slabDataParams.nz = slabSize
+    slabDataParams['img'] = dPar['img'].reshape(
+        dPar['N'], dPar['nz'], dPar['ny']*dPar['nx'])[:, z:z+slabSize, :].flatten()
+    slabDataParams['nz'] = slabSize
     return slabDataParams
 
 
 # Update algorithm parameter object aPar and set default parameters
 def setupAlgoParams(aPar, N, nFAC=0):
-    if 'nr2' in aPar:
-        aPar.nR2 = int(aPar.nr2)
+    defaults = [
+        ('nR2', 1),
+        ('R2max', 100.),
+        ('R2cand', [0.]),
+        ('FibSearch', False),
+        ('mu', 1.),
+        ('nB0', 100),
+        ('nICMiter', 0),
+        ('multiScale', False),
+        ('use3D', False),
+        ('magnitudeDiscrimination', True),
+        ('offresPenalty', 0.)
+
+    ]
+
+    for param, defval in defaults:
+        if param not in aPar:
+            aPar[param] = defval
+
+    if 'graphcut' not in aPar:
+        aPar['graphcut'] = 'graphcutlevel' in aPar
+    
+    if aPar['graphcut']:
+        if 'graphcutlevel' not in aPar:
+            aPar['graphcutLevel'] = 0
     else:
-        aPar.nR2 = 1
-    if 'r2max' in aPar:
-        aPar.R2max = float(aPar.r2max)
-    else:
-        aPar.R2max = 100.
-    if 'r2cand' in aPar:
-        aPar.R2cand = [float(R2) for R2 in aPar.r2cand.split(',')]
-    else:
-        aPar.R2cand = [0.]
-    if 'fibsearch' in aPar:
-        aPar.FibSearch = aPar.fibsearch == 'True'
-    else:
-        aPar.FibSearch = False
-    if 'mu' in aPar:
-        aPar.mu = float(aPar.mu)
-    else:
-        aPar.mu = 1.
-    if 'nb0' in aPar:
-        aPar.nB0 = int(aPar.nb0)
-    else:
-        aPar.nB0 = 100
-    if 'nicmiter' in aPar:
-        aPar.nICMiter = int(aPar.nicmiter)
-    else:
-        aPar.nICMiter = 0
-    if 'graphcut' in aPar:
-        aPar.graphcut = aPar.graphcut == 'True'
-    else:
-        aPar.graphcut = 'graphcutlevel' in aPar
-    if aPar.graphcut:
-        if 'graphcutlevel' in aPar:
-            aPar.graphcutLevel = int(aPar.graphcutlevel)
-        else:
-            aPar.graphcutLevel = 0
-    else:
-        aPar.graphcutLevel = None
-    if 'multiscale' in aPar:
-        aPar.multiScale = aPar.multiscale == 'True'
-    else:
-        aPar.multiScale = False
-    if 'use3d' in aPar:
-        aPar.use3D = aPar.use3d == 'True'
-    else:
-        aPar.use3D = False
-    if 'magnitudediscrimination' in aPar:
-        aPar.magnDiscr = aPar.magnitudediscrimination == 'True'
-    else:
-        aPar.magnDiscr = True
-    if 'realestimates' in aPar:
-        aPar.realEstimates = aPar.realestimates == 'True'
-        if not aPar.realEstimates and N == 2:
+        aPar['graphcutLevel'] = None
+
+    if 'realEstimates' in aPar:
+        if not aPar['realEstimates'] and N==2:
             raise Exception('Real-valued estimates needed for two-point Dixon')
-    elif N == 2:
-        aPar.realEstimates = True
+    elif N==2:
+        aPar['realEstimates'] = True
     else:
-        aPar.realEstimates = False
-    if 'offrespenalty' in aPar:
-        aPar.offresPenalty = float(aPar.offrespenalty)
-    else:
-        aPar.offresPenalty = 0
+        aPar['realEstimates'] = False
 
-    if aPar.nR2 > 1:
-        aPar.R2step = aPar.R2max/(aPar.nR2-1)  # [sec-1]
+    if aPar['nR2'] > 1:
+        aPar['R2step'] = aPar['R2max']/(aPar['nR2']-1)  # [sec-1]
     else:
-        aPar.R2step = 1.0  # [sec-1]
-    aPar.iR2cand = np.array(list(set([min(aPar.nR2-1, int(R2/aPar.R2step))
-                            for R2 in aPar.R2cand])))  # [msec]
-    aPar.nR2cand = len(aPar.iR2cand)
-    aPar.maxICMupdate = round(aPar.nB0/10)
+        aPar['R2step'] = 1.0  # [sec-1]
+    
+    aPar['iR2cand'] = np.array(list(set([min(aPar['nR2']-1, int(R2/aPar['R2step']))
+                            for R2 in aPar['R2cand']])))  # [msec]
 
-    # For Fatty Acid Composition, create algorithmParams for two passes: aPar and aPar.pass2
+    aPar['maxICMupdate'] = round(aPar['nB0']/10)
+
+    # For Fatty Acid Composition, create algorithmParams for two passes: aPar and aPar['pass2']
     # First pass: use standard fat-water separation to determine B0 and R2*
     # Second pass: use B0- and R2*-maps from first pass
     if nFAC > 0:
-        aPar.pass2 = AttrDict(aPar)  # modify algoParams for pass 2:
-        aPar.pass2.nICMiter = 0  # to omit ICM
-        aPar.pass2.graphcutLevel = None  # to omit the graphcut
-        aPar.pass2.graphcut = False
+        aPar['pass2'] = dict(aPar)  # modify algoParams for pass 2:
+        aPar['pass2']['nICMiter'] = 0  # to omit ICM
+        aPar['pass2']['graphcutLevel'] = None  # to omit the graphcut
+        aPar['pass2']['graphcut'] = False
     
-    aPar.output = ['wat', 'fat', 'ff', 'B0map']
-    if aPar.realEstimates:
-        aPar.output.append('phi')
-    if (aPar.nR2 > 1):
-        aPar.output.append('R2map')
+    aPar['output'] = ['wat', 'fat', 'ff', 'B0map']
+    if aPar['realEstimates']:
+        aPar['output'].append('phi')
+    if (aPar['nR2'] > 1):
+        aPar['output'].append('R2map')
     if (nFAC > 2):
-        aPar.output.append('CL')
+        aPar['output'].append('CL')
     if (nFAC > 1):
-        aPar.output.append('PUD')
+        aPar['output'].append('PUD')
     if (nFAC > 0):
-        aPar.output.append('UD')
+        aPar['output'].append('UD')
 
 
 # Get relative weights alpha of fat resonances based on CL, UD, and PUD per UD
@@ -166,67 +133,64 @@ def getFACalphas(CL=None, P2U=None, UD=None):
 
 # Update model parameter object mPar and set default parameters
 def setupModelParams(mPar, clockwisePrecession=False, temperature=None):
-    if 'watcs' in mPar:
-        watCS = [float(mPar.watcs)]
-    else:
+
+    defaults = [
+        ('fatCS', [1.3]),
+        ('nFAC', 0),
+        ('CL', 17.4), # Derived from Lundbom 2010
+        ('P2U', 0.2),  # Derived from Lundbom 2010
+        ('UD', 2.6),  # Derived from Lundbom 2010
+    ]
+
+    for param, defval in defaults:
+        if param not in mPar:
+            mPar[param] = defval
+
+    if 'watCS' not in mPar:
         if temperature: # Temperature dependence according to Hernando 2014
-            watCS = 1.3 + 3.748 -.01085 * temperature # Temp in [°C]
+            mPar['watCS'] = 1.3 + 3.748 -.01085 * temperature # Temp in [°C]
         else:
-            watCS = [4.7]
-    if 'fatcs' in mPar:
-        fatCS = [float(cs) for cs in mPar.fatcs.split(',')]
-    else:
-        fatCS = [1.3]
-    mPar.CS = np.array(watCS+fatCS, dtype=np.float32)
+            mPar['watCS'] = 4.7
+    
+    mPar['CS'] = np.array([mPar['watCS']] + mPar['fatCS'], dtype=np.float32)
+    
     if clockwisePrecession:
-        mPar.CS *= -1
-    mPar.P = len(mPar.CS)
-    if 'nfac' in mPar:
-        mPar.nFAC = int(mPar.nfac)
-    else:
-        mPar.nFAC = 0
-    if mPar.nFAC > 0 and mPar.P != 11:
+        mPar['CS'] *= -1
+    
+    mPar['P'] = len(mPar['CS'])
+
+    if mPar['nFAC'] > 0 and mPar['P'] != 11:
         raise Exception(
             'FAC excpects exactly one water and ten triglyceride resonances')
-    mPar.M = 2+mPar.nFAC
-    if 'cl' in mPar:
-        mPar.CL = float(mPar.cl)
-    else:
-        mPar.CL = 17.4  # Derived from Lundbom 2010
-    if 'p2u' in mPar:
-        mPar.P2U = float(mPar.p2u)
-    else:
-        mPar.P2U = 0.2  # Derived from Lundbom 2010
-    if 'ud' in mPar:
-        mPar.UD = float(mPar.ud)
-    else:
-        mPar.UD = 2.6  # Derived from Lundbom 2010
-    if mPar.nFAC == 0:
-        mPar.alpha = np.zeros([mPar.M, mPar.P], dtype=np.float32)
-        mPar.alpha[0, 0] = 1.
-        if 'relamps' in mPar:
-            for (p, a) in enumerate(mPar.relamps.split(',')):
-                mPar.alpha[1, p+1] = float(a)
+    
+    mPar['M'] = 2+mPar['nFAC']
+
+    if mPar['nFAC'] == 0:
+        mPar['alpha'] = np.zeros([mPar['M'], mPar['P']], dtype=np.float32)
+        mPar['alpha'][0, 0] = 1.
+        if 'relAmps' in mPar:
+            for (p, a) in enumerate(mPar['relAmps']):
+                mPar['alpha'][1, p+1] = float(a)
         else:
-            for p in range(1, mPar.P):
-                mPar.alpha[1, p] = float(1/len(fatCS))
-    elif mPar.nFAC == 1:
-        mPar.alpha = getFACalphas(mPar.CL, mPar.P2U)
-    elif mPar.nFAC == 2:
-        mPar.alpha = getFACalphas(mPar.CL)
-    elif mPar.nFAC == 3:
-        mPar.alpha = getFACalphas()
+            for p in range(1, mPar['P']):
+                mPar['alpha'][1, p] = float(1/len(fatCS))
+    elif mPar['nFAC'] == 1:
+        mPar['alpha'] = getFACalphas(mPar['CL'], mPar['P2U'])
+    elif mPar['nFAC'] == 2:
+        mPar['alpha'] = getFACalphas(mPar['CL'])
+    elif mPar['nFAC'] == 3:
+        mPar['alpha'] = getFACalphas()
     else:
         raise Exception('Unknown number of FAC parameters: {}'
-                        .format(mPar.nFAC))
+                        .format(mPar['nFAC']))
 
-    # For Fatty Acid Composition, create modelParams for two passes: mPar and mPar.pass2
+    # For Fatty Acid Composition, create modelParams for two passes: mPar and mPar['pass2']
     # First pass: use standard fat-water separation to determine B0 and R2*
     # Second pass: do the Fatty Acid Composition
-    if mPar.nFAC > 0: 
-        mPar.pass2 = AttrDict(mPar) # copy mPar into pass 2, then modify pass 1
-        mPar.alpha = getFACalphas(mPar.CL, mPar.P2U, mPar.UD)
-        mPar.M = mPar.alpha.shape[0]
+    if mPar['nFAC'] > 0: 
+        mPar['pass2'] = dict(mPar) # copy mPar into pass 2, then modify pass 1
+        mPar['alpha'] = getFACalphas(mPar['CL'], mPar['P2U'], mPar['UD'])
+        mPar['M'] = mPar['alpha'].shape[0]
 
 
 # group slices in sliceList in slabs of reconSlab contiguous slices
@@ -245,84 +209,57 @@ def getSlabs(sliceList, reconSlab):
     slabs.append((slices, pos))
     return slabs
 
-
-# Convert string on form "0-3, 5, 8-22" to set of integers
-def readIntString(str):
-    ints = []
-    for word in [w.replace(' ', '') for w in str.split(',')]:
-        if word.isdigit():
-            ints.append(int(word))
-        elif '-' in word:
-            try:
-                digits = [int(d.replace(' ', '')) for d in word.split('-')]
-            except ValueError:
-                raise Exception('Unexpected integer string "{}"'.format(str))
-            if len(digits) > 2 or digits[0] > digits[1]:
-                raise Exception('Unexpected integer string "{}"'.format(str))
-            else:
-                for i in range(digits[0], digits[1]+1):
-                    ints.append(i)
-    return list(set(ints))
-
     
 # Update data param object, set default parameters and read data from files
 def setupDataParams(dPar, outDir=None):
     if outDir:
-        dPar.outDir = Path(outDir)
-    elif 'outdir' in dPar:
-        dPar.outDir = Path(dPar.outdir)
+        dPar['outDir'] = Path(outDir)
+    elif 'outDir' in dPar:
+        dPar['outDir'] = Path(dPar['outDir'])
     else:
         raise Exception('No outDir defined')
-    # Rescaling might be needed for datasets with too small/large pixel values
-    if 'rescale' in dPar:
-        dPar.reScale = float(dPar.rescale)
-    else:
-        dPar.reScale = 1.0
-    if 'echoes' in dPar:
-        dPar.echoes = readIntString(dPar.echoes)
-    if 'slicelist' in dPar:
-        dPar.sliceList = readIntString(dPar.slicelist)
-    if 'cropfov' in dPar:
-        dPar.cropFOV = [int(x.replace(' ', '')) for x in dPar.cropfov.split(',')]
-    if 'reconslab' in dPar:
-        dPar.reconSlab = int(dPar.reconslab)
-    if 'temperature' in dPar:
-        dPar.Temperature = float(dPar.temperature)
-    else:
-        dPar.Temperature = None
-    if 'clockwiseprecession' in dPar:
-        dPar.clockwisePrecession = dPar.clockwiseprecession == 'True'
-    else:
-        dPar.clockwisePrecession = False
-    if 'offrescenter' in dPar:
-        dPar.offresCenter = float(dPar.offrescenter)
-    else:
-        dPar.offresCenter = 0.
+
+    defaults = [
+        ('reScale', 1.0),
+        ('temperature', None),
+        ('clockwisePrecession', False),
+        ('offresCenter', 0.),
+        ('files', [])
+    ]
+
+    for param, defval in defaults:
+        if param not in dPar:
+            dPar[param] = defval
+
     if 'files' in dPar:
-        dPar.files = [dPar.configPath / file for file in dPar.files.split(',') if Path(dPar.configPath / file).is_file()]
-    else:
-        dPar.files = []
+        dPar['files'] = [dPar['configPath'] / file for file in list(dPar['files']) if Path(dPar['configPath'] / file).is_file()]
+    
     if 'dirs' in dPar:
-        dPar.dirs = [dPar.configPath / dir for dir in dPar.dirs.split(',') if Path(dPar.configPath / dir).is_dir()]
-        for path in dPar.dirs:
-            dPar.files += [obj for obj in path.iterdir() if obj.is_file()]
+        dPar['dirs'] = [dPar['configPath'] / dir for dir in list(dPar['dirs']) if Path(dPar['configPath'] / dir).is_dir()]
+        for path in dPar['dirs']:
+            dPar['files'] += [obj for obj in path.iterdir() if obj.is_file()]
+    
     validFiles = DICOM.getValidFiles(dPar['files'])
+    
     if validFiles:
         DICOM.updateDataParams(dPar, validFiles)
     else:
-        if len(dPar.files) == 1 and dPar.files[0].suffix == '.mat':
-            MATLAB.updateDataParams(dPar, dPar.files[0])
+        if len(dPar['files']) == 1 and dPar['files'][0].suffix == '.mat':
+            MATLAB.updateDataParams(dPar, dPar['files'][0])
         else:
             raise Exception('No valid files found')
+    
     if 'reconSlab' in dPar:
-        dPar.slabs = getSlabs(dPar.sliceList, dPar.reconSlab)
+        dPar['slabs'] = getSlabs(dPar['sliceList'], dPar['reconSlab'])
 
 
 # Read configuration file
 def readConfig(file, section):
     file = Path(file)
-    config = configparser.ConfigParser()
-    config.read(file)
-    adict = AttrDict(config[section])
-    adict.configPath = file.parent
-    return adict
+    with open(file, 'r') as configFile:
+        try:
+            config = yaml.safe_load(configFile)
+        except yaml.YAMLError as exc:
+            raise Exception('Error reading config file {}'.format(file)) from exc
+    config['configPath'] = file.parent
+    return config

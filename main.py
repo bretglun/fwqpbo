@@ -15,9 +15,9 @@ gyro = 42.58  # 1H gyromagnetic ratio
 # Zero pad back any cropped FOV
 def padCropped(croppedImage, dPar):
     if 'cropFOV' in dPar:
-        image = np.zeros((dPar.nz, dPar.Ny, dPar.Nx))
-        x1, x2 = dPar.cropFOV[0], dPar.cropFOV[1]
-        y1, y2 = dPar.cropFOV[2], dPar.cropFOV[3]
+        image = np.zeros((dPar['nz'], dPar['Ny'], dPar['Nx']))
+        x1, x2 = dPar['cropFOV'][0], dPar['cropFOV'][1]
+        y1, y2 = dPar['cropFOV'][2], dPar['cropFOV'][3]
         image[:, y1:y2, x1:x2] = croppedImage
         return image
     else:
@@ -26,14 +26,14 @@ def padCropped(croppedImage, dPar):
 
 def save(output, dPar):
     for seriesType in output: # zero pad if was cropped and reshape to row,col,slice
-        output[seriesType] = np.moveaxis(padCropped(output[seriesType].reshape((dPar.nz, dPar.ny, dPar.nx)), dPar), 0, -1)
+        output[seriesType] = np.moveaxis(padCropped(output[seriesType].reshape((dPar['nz'], dPar['ny'], dPar['nx'])), dPar), 0, -1)
     
-    if dPar.fileType == 'DICOM':
+    if dPar['fileType'] == 'DICOM':
         DICOM.save(output, dPar)
-    elif dPar.fileType == 'MATLAB':
+    elif dPar['fileType'] == 'MATLAB':
         MATLAB.save(output, dPar)
     else:
-        raise Exception('Unknown filetype: {}'.format(dPar.fileType))
+        raise Exception('Unknown filetype: {}'.format(dPar['fileType']))
 
 
 # Merge output for slices reconstructed separately
@@ -86,40 +86,40 @@ def reconstruct(dPar, aPar, mPar):
     # Do the fat/water separation
     rho, B0map, R2map = fatWaterSeparation.reconstruct(dPar, aPar, mPar)
     wat = rho[0]
-    fat = getFat(rho, mPar.alpha)
+    fat = getFat(rho, mPar['alpha'])
 
     # Prepare prescribed output
     output = {}
-    if 'wat' in aPar.output:
+    if 'wat' in aPar['output']:
         output['wat'] = np.abs(wat)
-    if 'fat' in aPar.output:
+    if 'fat' in aPar['output']:
         output['fat'] = np.abs(fat)
-    if 'phi' in aPar.output:
+    if 'phi' in aPar['output']:
         output['phi'] = np.angle(wat, deg=True) + 180
-    if 'ip' in aPar.output: # Calculate synthetic in-phase
+    if 'ip' in aPar['output']: # Calculate synthetic in-phase
         output['ip'] = np.abs(wat+fat)
-    if 'op' in aPar.output: # Calculate synthetic opposed-phase
+    if 'op' in aPar['output']: # Calculate synthetic opposed-phase
         output['op'] = np.abs(wat-fat)
-    if 'ff' in aPar.output: # Calculate the fat fraction
-        if aPar.magnDiscr:  # to avoid bias from noise
+    if 'ff' in aPar['output']: # Calculate the fat fraction
+        if aPar['magnitudeDiscrimination']:  # to avoid bias from noise
             output['ff'] = 100 * np.real(fat / (wat + fat + sys.float_info.epsilon))
         else:
             output['ff'] = 100 * np.abs(fat)/(np.abs(wat) + np.abs(fat) + sys.float_info.epsilon)
-    if 'B0map' in aPar.output:
+    if 'B0map' in aPar['output']:
         output['B0map'] = B0map
-    if 'R2map' in aPar.output:
+    if 'R2map' in aPar['output']:
         output['R2map'] = R2map
 
     # Do any Fatty Acid Composition in a second pass
-    if mPar.nFAC > 0:
-        rho = fatWaterSeparation.reconstruct(dPar, aPar.pass2, mPar.pass2, B0map, R2map)[0]
+    if mPar['nFAC'] > 0:
+        rho = fatWaterSeparation.reconstruct(dPar, aPar['pass2'], mPar['pass2'], B0map, R2map)[0]
         CL, UD, PUD = getFattyAcidComposition(rho)
     
-        if 'CL' in aPar.output:
+        if 'CL' in aPar['output']:
             output['CL'] = CL
-        if 'UD' in aPar.output:
+        if 'UD' in aPar['output']:
             output['UD'] = UD
-        if 'PUD' in aPar.output:
+        if 'PUD' in aPar['output']:
             output['PUD'] = PUD
 
     return output
@@ -133,23 +133,23 @@ def main(dataParamFile, algoParamFile, modelParamFile, outDir=None):
 
     # Setup configuration objects
     config.setupDataParams(dPar, outDir)
-    config.setupModelParams(mPar, dPar.clockwisePrecession, dPar.Temperature)
-    config.setupAlgoParams(aPar, dPar.N, mPar.nFAC)
+    config.setupModelParams(mPar, dPar['clockwisePrecession'], dPar['temperature'])
+    config.setupAlgoParams(aPar, dPar['N'], mPar['nFAC'])
 
-    print('B0 = {}'.format(round(dPar.B0, 2)))
-    print('N = {}'.format(dPar.N))
-    print('t1/dt = {}/{} msec'.format(round(dPar.t1*1000, 2),
-                                      round(dPar.dt*1000, 2)))
-    print('nx,ny,nz = {},{},{}'.format(dPar.nx, dPar.ny, dPar.nz))
+    print('B0 = {}'.format(round(dPar['B0'], 2)))
+    print('N = {}'.format(dPar['N']))
+    print('t1/dt = {}/{} msec'.format(round(dPar['t1']*1000, 2),
+                                      round(dPar['dt']*1000, 2)))
+    print('nx,ny,nz = {},{},{}'.format(dPar['nx'], dPar['ny'], dPar['nz']))
     print('dx,dy,dz = {},{},{}'.format(
-        round(dPar.dx, 2), round(dPar.dy, 2), round(dPar.dz, 2)))
+        round(dPar['dx'], 2), round(dPar['dy'], 2), round(dPar['dz'], 2)))
 
     # Run fat/water processing and save output
-    if aPar.use3D or len(dPar.sliceList) == 1:
+    if aPar['use3D'] or len(dPar['sliceList']) == 1:
         if 'slabs' in dPar:
-            for iSlab, (slices, z) in enumerate(dPar.slabs):
+            for iSlab, (slices, z) in enumerate(dPar['slabs']):
                 print('Processing slab {}/{} (slices {}-{})...'
-                      .format(iSlab+1, len(dPar.slabs), slices[0]+1, slices[-1]+1))
+                      .format(iSlab+1, len(dPar['slabs']), slices[0]+1, slices[-1]+1))
                 slabDataParams = config.getSlabDataParams(dPar, slices, z)
                 output = reconstruct(slabDataParams, aPar, mPar)
                 save(output, slabDataParams) # save data slab-wise to save memory
@@ -158,9 +158,9 @@ def main(dataParamFile, algoParamFile, modelParamFile, outDir=None):
             save(output, dPar)
     else:
         output = []
-        for z, slice in enumerate(dPar.sliceList):
+        for z, slice in enumerate(dPar['sliceList']):
             print('Processing slice {} ({}/{})...'
-                  .format(slice+1, z+1, len(dPar.sliceList)))
+                  .format(slice+1, z+1, len(dPar['sliceList'])))
             sliceDataParams = config.getSliceDataParams(dPar, slice, z)
             output.append(reconstruct(sliceDataParams, aPar, mPar))
         save(mergeOutputSlices(output), dPar)
