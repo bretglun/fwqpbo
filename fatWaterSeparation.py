@@ -49,21 +49,6 @@ def QPBO(nx, ny, nz, D, Vx, Vy, Vz):
     return label
 
 
-# TODO: implement Fibonacci search
-def greedyR2(J, nVxl):
-    nR2 = J.shape[0]
-    R2 = np.zeros(shape=(nVxl))
-    for i in range(nVxl):
-        r = 0
-        min = J[r, i]
-        if r+1 < nR2 and J[r+1, i] < min:
-            while r+1 < nR2 and J[r+1, i] < min:
-                min = J[r+1, i]
-                r += 1
-        R2[i] = r
-    return R2
-
-
 # Calculate LS error J as function of R2*
 def getR2Residuals(Y, dB0, C, nB0, nR2, nVxl, D=None):
     J = np.zeros(shape=(nR2, nVxl))
@@ -467,7 +452,7 @@ def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
 
     if determineR2:
         J = getR2Residuals(Y, dB0, C, aPar['nB0'], aPar['nR2'], nVxl, D)
-        R2 = greedyR2(J, nVxl)
+        R2 = np.argmin(J, axis=0) # brute force minimization
     elif R2map is None:
         R2 = np.zeros(nVxl, dtype=int)
     else:

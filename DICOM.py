@@ -349,7 +349,6 @@ def getPercentileWindow(im, intercept, slope, percentile=95):
 # DICOM files. If missing tag, a new one is created if value representation VR
 # is provided
 def setTagValue(ds, key, val, frame=None, VR=None):
-    # TODO: improve support for multi-frame DICOM images
     # Philips(?) private tag containing frame tags
     if (frame is not None and
        0x2005140f in ds[tagDict['Frame sequence']].value[frame]):

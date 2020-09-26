@@ -33,7 +33,6 @@ def setupAlgoParams(aPar, N, nFAC=0):
         ('nR2', 1),
         ('R2max', 100.),
         ('R2cand', [0.]),
-        ('FibSearch', False),
         ('mu', 1.),
         ('nB0', 100),
         ('nICMiter', 0),
