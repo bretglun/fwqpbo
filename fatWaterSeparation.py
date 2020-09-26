@@ -339,15 +339,15 @@ def getRealDemodulated(Y, D):
 
 # Calculate LS error J as function of B0
 def getB0Residuals(Y, C, nB0, nVxl, iR2cand, D=None):
-    J = np.zeros(shape=(nB0, nVxl))
-    # TODO: loop over all R2candidates
-    r = 0
-    for b in range(nB0):
-        if not D:  # complex-valued estimates
-            y = Y
-        else:  # real-valued estimates
-            y, phi = getRealDemodulated(Y, D[r][b])
-        J[b, :] = np.linalg.norm(np.dot(C[iR2cand[r]][b], y), axis=0)**2
+    J = np.zeros(shape=(nB0, nVxl, len(iR2cand)))
+    for r in range(len(iR2cand)):
+        for b in range(nB0):
+            if not D:  # complex-valued estimates
+                y = Y
+            else:  # real-valued estimates
+                y, phi = getRealDemodulated(Y, D[r][b])
+            J[b, :, r] = np.linalg.norm(np.dot(C[iR2cand[r]][b], y), axis=0)**2
+    J = np.min(J, axis=2) # minimum over R2* candidates
     return J
 
 
