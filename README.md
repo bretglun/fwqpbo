@@ -19,10 +19,11 @@ ABOUT
 -------------------------------------------------------------------------------
 FWQPBO is a command-line tool for MRI [chemical shift based fat-water 
 separation with B0-correction based on QPBO graph cuts
-](https://doi.org/10.1002/mrm.26479). Input paramaters are provided by human 
-readable configuration files. See example configuration files provided with 
-FWQPBO for details. Input data can be in DICOM format, or [MATLAB format
-according to the ISMRM 2012 challenge](http://challenge.ismrm.org/node/14).
+](https://onlinelibrary.wiley.com/doi/abs/10.1002/mrm.26479). 
+Input paramaters are provided by human readable configuration files. 
+See example configuration files provided with FWQPBO for details. 
+Input data can be in DICOM format, or [MATLAB format according to the 
+ISMRM 2012 challenge](http://challenge.ismrm.org/node/14).
 FWQPBO is written in Python.
 
 HOW TO USE
