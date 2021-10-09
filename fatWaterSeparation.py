@@ -123,8 +123,8 @@ def getIndexImages(nx, ny, nz):
     below[:-1, :, :] = True
     above = np.zeros((nz, ny, nx), dtype=bool)
     above[1:, :, :] = True
-    return (left.flatten(), right.flatten(), up.flatten(), down.flatten(),
-            above.flatten(), below.flatten())
+    return (left.flatten(), right.flatten(), down.flatten(), up.flatten(),
+            below.flatten(), above.flatten())
 
 
 # 2D measure of isotropy defined as
@@ -253,7 +253,7 @@ def calculateFieldMap(nB0, level, graphcutLevel, multiScale, maxICMupdate,
     # square(steplength) not included in V
     ddJ = (J[(A+1) % nB0, vxls]+J[(A-1) % nB0, vxls]-2*J[A, vxls])
 
-    left, right, up, down, above, below = getIndexImages(
+    left, right, down, up, below, above = getIndexImages(
         level['nx'], level['ny'], level['nz'])
 
     wx = np.minimum(ddJ[left], ddJ[right])*mu/level['dx']
