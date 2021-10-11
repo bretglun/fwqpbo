@@ -1,7 +1,6 @@
 import pydicom
 import datetime
 import numpy as np
-from pathlib import Path
 
 
 gyro = 42.58  # 1H gyromagnetic ratio
@@ -334,7 +333,7 @@ def updateDataParams(dPar, files):
                 raise Exception('Unknown image types')
             img.append(c)
     dPar['frameList'] = frameList
-    dPar['img'] = np.array(img)*dPar['reScale']
+    dPar['img'] = np.array(img, shape=(dPar['N'], dPar['nz'], dPar['ny'], dPar['nx'])) * dPar['reScale']
 
 
 # Set window so that percentile % of pixels are inside

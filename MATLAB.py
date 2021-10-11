@@ -1,6 +1,5 @@
 import scipy.io
 import numpy as np
-from pathlib import Path
 
 
 # update dPar with information retrieved from MATLAB file
@@ -71,7 +70,6 @@ def updateDataParams(dPar, file):
     img = np.transpose(img)
     img = np.swapaxes(img, 2, 3)
 
-    img = img.flatten()
     dPar['img'] = img*dPar['reScale']
 
 

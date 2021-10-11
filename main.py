@@ -73,8 +73,7 @@ def getFattyAcidComposition(rho):
 
 # Get total fat component (for Fatty Acid Composition; trivial otherwise)
 def getFat(rho, alpha):
-    nVxl = np.shape(rho)[1]
-    fat = np.zeros(nVxl, dtype=complex)
+    fat = np.zeros(rho.shape[1:], dtype=complex)
     for m in range(1, alpha.shape[0]):
         fat += sum(alpha[m, 1:])*rho[m]
     return fat
