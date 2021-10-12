@@ -10,8 +10,7 @@ import yaml
 def getSliceDataParams(dPar, slice, z):
     sliceDataParams = dict(dPar)
     sliceDataParams['sliceList'] = [slice]
-    sliceDataParams['img'] = dPar['img'].reshape(
-        dPar['N'], dPar['nz'], dPar['ny']*dPar['nx'])[:, z, :].flatten()
+    sliceDataParams['img'] = dPar['img'][:, [z], :, :]
     sliceDataParams['nz'] = 1
     return sliceDataParams
 
@@ -21,8 +20,7 @@ def getSlabDataParams(dPar, slices, z):
     slabDataParams = dict(dPar)
     slabDataParams['sliceList'] = slices
     slabSize = len(slices)
-    slabDataParams['img'] = dPar['img'].reshape(
-        dPar['N'], dPar['nz'], dPar['ny']*dPar['nx'])[:, z:z+slabSize, :].flatten()
+    slabDataParams['img'] = dPar['img'][:, z:z+slabSize, :, :]
     slabDataParams['nz'] = slabSize
     return slabDataParams
 
