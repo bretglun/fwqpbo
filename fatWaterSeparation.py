@@ -5,40 +5,40 @@ from skimage.filters import threshold_otsu
 gyro = 42.576
 
 
-def QPBO(nx, ny, nz, D, Vx, Vy, Vz):
+def QPBO(D, Vx, Vy, Vz):
     graph = tq.QPBOFloat()
-    numNodes = nx * ny * nz
+    nz, ny, nx = D.shape[1:]
+    numNodes = nz * ny *nx
     graph.add_node(numNodes)
 
     # Add unary terms:
     for i in range(numNodes):
-        graph.add_unary_term(i, D[0, i], D[1, i])
-
+        (z, y, x) = np.unravel_index(i, (nz, ny, nx))
+        graph.add_unary_term(i, D[0, z, y, x], D[1, z, y, x])
+    
     # Add binary terms in x-direction:
     for z in range(nz):
         for y in range(ny):
             for x in range(nx-1):
-                i = (z*ny + y)*nx + x # node index
-                j = i + 1 # x neighbor node index
-                ix = (z*ny + y)*(nx-1) + x # node index for Vx (dims differ)
-                graph.add_pairwise_term(i, j, Vx[0, ix], Vx[1, ix], Vx[2, ix], Vx[3, ix])
+                i = np.ravel_multi_index((z, y, x), (nz, ny, nx)) # node index
+                j = np.ravel_multi_index((z, y, x+1), (nz, ny, nx)) # x neighbor node index
+                graph.add_pairwise_term(i, j, Vx[0, z, y, x], Vx[1, z, y, x], Vx[2, z, y, x], Vx[3, z, y, x])
     
     # Add binary terms in y-direction
     for z in range(nz):
         for y in range(ny-1):
             for x in range(nx) :
-                i = (z*ny + y)*nx + x # node index
-                j = i + nx # y neighbor node index
-                iy = (z*(ny-1) + y)*nx + x # node index for Vy (dims differ)
-                graph.add_pairwise_term(i, j, Vy[0, iy], Vy[1, iy], Vy[2, iy], Vy[3, iy])
+                i = np.ravel_multi_index((z, y, x), (nz, ny, nx)) # node index
+                j = np.ravel_multi_index((z, y+1, x), (nz, ny, nx)) # y neighbor node index
+                graph.add_pairwise_term(i, j, Vy[0, z, y, x], Vy[1, z, y, x], Vy[2, z, y, x], Vy[3, z, y, x])
 
     # Add binary terms in z-direction
     for z in range(nz-1):
         for y in range(ny):
             for x in range(nx):
-                i = (z*ny + y)*nx + x # node index
-                j = i + ny*nx # z neighbor node index
-                graph.add_pairwise_term(i, j, Vz[0, i], Vz[1, i], Vz[2, i], Vz[3, i])
+                i = np.ravel_multi_index((z, y, x), (nz, ny, nx)) # node index
+                j = np.ravel_multi_index((z+1, y, x), (nz, ny, nx)) # z neighbor node index
+                graph.add_pairwise_term(i, j, Vz[0, z, y, x], Vz[1, z, y, x], Vz[2, z, y, x], Vz[3, z, y, x])
 
     graph.solve()
 
@@ -46,24 +46,23 @@ def QPBO(nx, ny, nz, D, Vx, Vy, Vz):
     for i in range(numNodes):
         label[i] = graph.get_label(i)
 
-    return label
+    return label.reshape((nz, ny, nx))
 
 
 # Calculate LS error J as function of R2*
-def getR2Residuals(Y, dB0, C, nB0, nR2, nVxl, D=None):
-    J = np.zeros(shape=(nR2, nVxl))
+def getR2Residuals(Y, dB0, C, nB0, nR2, D=None):
+    J = np.zeros(shape=(nR2, Y.shape[1], Y.shape[2], Y.shape[3]))
     for b in range(nB0):
         for r in range(nR2):
             if not D:  # complex-valued estimates
                 y = Y[:, dB0 == b]
             else:  # real-valued estimates
                 y = getRealDemodulated(Y[:, dB0 == b], D[r][b])[0]
-            J[r, dB0 == b] = np.linalg.norm(np.dot(C[r][b], y), axis=0)**2
+            J[r, dB0 == b] = np.linalg.norm(np.tensordot(C[r][b], y, axes=(1,0)), axis=0)**2
     return J
 
 
-def ICM(prev, L, maxICMUpdate, nICMiter, J, V, wx, wy, wz,
-        left, right, up, down, above, below):
+def ICM(prev, L, maxICMUpdate, nICMiter, J, V, wx, wy, wz):
     current = np.array(prev)
     for k in range(nICMiter):  # ICM iterate
         print(str(k+1), ', ', end='')
@@ -76,14 +75,14 @@ def ICM(prev, L, maxICMUpdate, nICMiter, J, V, wx, wy, wz,
         # Odd are negative
         updates[1:len(updates):2] = list(range(-1, -maxICMUpdate-1, -1))
         for update in updates:
-            cost = J[(prev+update) % L, range(J.shape[1])]  # Unary cost
+            cost = J[(prev.flatten()+update) % L, range(J.shape[1])].reshape(prev.shape)  # Unary cost
             # Binary costs:
-            cost[right] += wx*V[abs((prev[right]+update) % L-prev[left])]
-            cost[left] += wx*V[abs((prev[left]+update) % L-prev[right])]
-            cost[down] += wy*V[abs((prev[down]+update) % L-prev[up])]
-            cost[up] += wy*V[abs((prev[up]+update) % L-prev[down])]
-            cost[below] += wz*V[abs((prev[below]+update) % L-prev[above])]
-            cost[above] += wz*V[abs((prev[above]+update) % L-prev[below])]
+            cost[:,:,1:]  += wx * V[abs((prev[:,:,1:]  + update) % L - prev[:,:,:-1])]
+            cost[:,:,:-1] += wx * V[abs((prev[:,:,:-1] + update) % L - prev[:,:,1:])]
+            cost[:,1:,:]  += wy * V[abs((prev[:,1:,:]  + update) % L - prev[:,:-1,:])]
+            cost[:,:-1,:] += wy * V[abs((prev[:,:-1,:] + update) % L - prev[:,1:,:])]
+            cost[1:,:,:]  += wz * V[abs((prev[1:,:,:]  + update) % L - prev[:-1,:,:])]
+            cost[:-1,:,:] += wz * V[abs((prev[:-1,:,:] + update) % L - prev[1:,:,:])]
 
             current[cost < min_cost] = (prev[cost < min_cost]+update) % L
             min_cost[cost < min_cost] = cost[cost < min_cost]
@@ -96,35 +95,20 @@ def findMinima(f): return np.where((f < np.roll(f, 1))*(f < np.roll(f, -1)))[0]
 
 # In each voxel, find two smallest local residual minima in a period of omega
 def findTwoSmallestMinima(J):
-    nVxl = J.shape[1]
-    A = np.zeros(nVxl, dtype=int)
-    B = np.zeros(nVxl, dtype=int)
-    for i in range(nVxl):
-        minima = sorted(findMinima(J[:, i]), key=lambda x: J[x, i])[:2]
-        if len(minima) == 2:
-            A[i], B[i] = minima
-        elif len(minima) == 1:
-            A[i] = B[i] = minima[0]
-        else:
-            A[i] = B[i] = 0  # Assign dummy minimum
+    nVxl = J.shape[1] * J.shape[2] * J.shape[3]
+    A = np.zeros(J.shape[1:], dtype=int)
+    B = np.zeros(J.shape[1:], dtype=int)
+    for z in range(J.shape[1]):
+        for y in range(J.shape[2]):
+            for x in range(J.shape[3]):
+                minima = sorted(findMinima(J[:,z,y,x]), key=lambda b: J[b,z,y,x])[:2]
+                if len(minima) == 2:
+                    A[z,y,x], B[z,y,x] = minima
+                elif len(minima) == 1:
+                    A[z,y,x] = B[z,y,x] = minima[0]
+                else:
+                    A[z,y,x] = B[z,y,x] = 0  # Assign dummy minimum
     return A, B
-
-
-def getIndexImages(nx, ny, nz):
-    left = np.zeros((nz, ny, nx), dtype=bool)
-    left[:, :, :-1] = True
-    right = np.zeros((nz, ny, nx), dtype=bool)
-    right[:, :, 1:] = True
-    down = np.zeros((nz, ny, nx), dtype=bool)
-    down[:, :-1, :] = True
-    up = np.zeros((nz, ny, nx), dtype=bool)
-    up[:, 1:, :] = True
-    below = np.zeros((nz, ny, nx), dtype=bool)
-    below[:-1, :, :] = True
-    above = np.zeros((nz, ny, nx), dtype=bool)
-    above[1:, :, :] = True
-    return (left.flatten(), right.flatten(), up.flatten(), down.flatten(),
-            above.flatten(), below.flatten())
 
 
 # 2D measure of isotropy defined as
@@ -173,53 +157,15 @@ def getHigherLevel(level):
 
 
 def getHighLevelResidualImage(J, high, level):
-    Jlow = np.zeros((J.shape[0], level['nz']+level['nz'] % high['sz'],
-                     level['ny']+level['ny'] % high['sy'],
-                     level['nx']+level['nx'] % high['sx']))
-    Jlow[:, :level['nz'], :level['ny'], :level['nx']] = J.reshape(
-        J.shape[0], level['nz'], level['ny'], level['nx'])
-
-    Jhigh = np.zeros((J.shape[0], high['nz'], high['ny'], high['nx']))
-
-    Jhigh = Jlow[:, ::high['sz'], ::high['sy'], ::high['sx']]
-    if high['sx'] > 1:
-        Jhigh += Jlow[:, ::high['sz'], ::high['sy'], 1::high['sx']]
-    if high['sy'] > 1:
-        Jhigh += Jlow[:, ::high['sz'], 1::high['sy'], ::high['sx']]
-    if high['sz'] > 1:
-        Jhigh += Jlow[:, 1::high['sz'], ::high['sy'], ::high['sx']]
-    if high['sx'] > 1 and high['sy'] > 1:
-        Jhigh += Jlow[:, ::high['sz'], 1::high['sy'], 1::high['sx']]
-    if high['sx'] > 1 and high['sz'] > 1:
-        Jhigh += Jlow[:, 1::high['sz'], ::high['sy'], 1::high['sx']]
-    if high['sy'] > 1 and high['sz'] > 1:
-        Jhigh += Jlow[:, 1::high['sz'], 1::high['sy'], ::high['sx']]
-    if high['sx'] > 1 and high['sy'] > 1 and high['sz'] > 1:
-        Jhigh += Jlow[:, 1::high['sz'], 1::high['sy'], 1::high['sx']]
-
-    # scale result
-    return Jhigh.reshape(Jhigh.shape[0], -1)/(high['sx']*high['sy']*high['sz'])
+    Jhigh = np.zeros((J.shape[0], level['nz']+level['nz'] % high['sz'],
+                                  level['ny']+level['ny'] % high['sy'],
+                                  level['nx']+level['nx'] % high['sx']))
+    Jhigh[:, :level['nz'], :level['ny'], :level['nx']] = J
+    return Jhigh.reshape((J.shape[0], high['nz'], high['sz'], high['ny'], high['sy'], high['nx'], high['sx'])).mean(axis=(2,4,6))
 
 
 def getB0fromHighLevel(dB0high, level, high):
-    dB0 = np.empty((high['nz']*high['sz'], high['ny']*high['sy'],
-                    high['nx']*high['sx']), dtype=int)
-    dB0[::high['sz'], ::high['sy'], ::high['sx']] = dB0high
-    if high['sx'] > 1:
-        dB0[::high['sz'], ::high['sy'], 1::high['sx']] = dB0high
-    if high['sy'] > 1:
-        dB0[::high['sz'], 1::high['sy'], ::high['sx']] = dB0high
-    if high['sz'] > 1:
-        dB0[1::high['sz'], ::high['sy'], ::high['sx']] = dB0high
-    if high['sx'] > 1 and high['sy'] > 1:
-        dB0[::high['sz'], 1::high['sy'], 1::high['sx']] = dB0high
-    if high['sx'] > 1 and high['sz'] > 1:
-        dB0[1::high['sz'], ::high['sy'], 1::high['sx']] = dB0high
-    if high['sy'] > 1 and high['sz'] > 1:
-        dB0[1::high['sz'], 1::high['sy'], ::high['sx']] = dB0high
-    if high['sx'] > 1 and high['sy'] > 1 and high['sz'] > 1:
-        dB0[1::high['sz'], 1::high['sy'], 1::high['sx']] = dB0high
-    return dB0[:level['nz'], :level['ny'], :level['nx']].flatten()
+    return np.repeat(np.repeat(np.repeat(dB0high, high['sx'], axis=2), high['sy'], axis=1), high['sz'], axis=0)[:level['nz'], :level['ny'], :level['nx']]
 
 
 def calculateFieldMap(nB0, level, graphcutLevel, multiScale, maxICMupdate,
@@ -228,7 +174,7 @@ def calculateFieldMap(nB0, level, graphcutLevel, multiScale, maxICMupdate,
     dB0 = np.array(A)
 
     # Multiscale recursion
-    if dB0.shape[0] == 1:  # Trivial case at coarsest level with only one voxel
+    if dB0.size == 1:  # Trivial case at coarsest level with only one voxel
         print('Level (1, 1, 1): Trivial case')
         return dB0
 
@@ -247,50 +193,47 @@ def calculateFieldMap(nB0, level, graphcutLevel, multiScale, maxICMupdate,
     # Prepare MRF
     print('Preparing MRF...', end='')
     # Prepare discontinuity costs
-    vxls = range(J.shape[1])
+    
     # 2nd derivative of residual function
     # NOTE: No division by square(steplength) since
-    # square(steplength) not included in V
-    ddJ = (J[(A+1) % nB0, vxls]+J[(A-1) % nB0, vxls]-2*J[A, vxls])
+    # square(steplength) not included in V    
+    J.shape = (J.shape[0], np.prod(J.shape[1:]))
+    vxls = range(J.shape[1])
+    ddJ = (J[(A.flatten()+1) % nB0, vxls]+J[(A.flatten()-1) % nB0, vxls]-2*J[A.flatten(), vxls]).reshape(A.shape)
 
-    left, right, up, down, above, below = getIndexImages(
-        level['nx'], level['ny'], level['nz'])
-
-    wx = np.minimum(ddJ[left], ddJ[right])*mu/level['dx']
-    wy = np.minimum(ddJ[down], ddJ[up])*mu/level['dy']
-    wz = np.minimum(ddJ[below], ddJ[above])*mu/level['dz']
+    wx = np.minimum(ddJ[:,:,:-1], ddJ[:,:,1:]) * mu / level['dx']
+    wy = np.minimum(ddJ[:,:-1,:], ddJ[:,1:,:]) * mu / level['dy']
+    wz = np.minimum(ddJ[:-1,:,:], ddJ[1:,:,:]) * mu / level['dz']
 
     # Prepare data fidelity costs
-    OP = np.zeros(J.shape)
-    if offresPenalty > 0:
-        for b in range(nB0):
-            OP[b, :] = (1-np.cos(2*np.pi*(b-offresCenter)/nB0))/2*offresPenalty
+    OP = (1-np.cos(2*np.pi*(np.arange(nB0)-offresCenter)/nB0)) / 2 * offresPenalty
 
-    D = np.array([J[A, range(J.shape[1])] + OP[A, range(OP.shape[1])],
-                 J[B, range(J.shape[1])] + OP[B, range(OP.shape[1])]])
+    D = np.array([J[A.flatten(), vxls].reshape(A.shape) + OP[A],
+                  J[B.flatten(), vxls].reshape(A.shape) + OP[B]])
+    
     print('DONE')
 
     # QPBO
     graphcut = level['L'] >= graphcutLevel
     if graphcut:
         Vx = np.array(wx*[
-                      V[abs(A[left]-A[right])],
-                      V[abs(A[left]-B[right])],
-                      V[abs(B[left]-A[right])],
-                      V[abs(B[left]-B[right])]])
+                      V[abs(A[:,:,:-1]-A[:,:,1:])],
+                      V[abs(A[:,:,:-1]-B[:,:,1:])],
+                      V[abs(B[:,:,:-1]-A[:,:,1:])],
+                      V[abs(B[:,:,:-1]-B[:,:,1:])]])
         Vy = np.array(wy*[
-                      V[abs(A[down]-A[up])],
-                      V[abs(A[down]-B[up])],
-                      V[abs(B[down]-A[up])],
-                      V[abs(B[down]-B[up])]])
+                      V[abs(A[:,:-1,:]-A[:,1:,:])],
+                      V[abs(A[:,:-1,:]-B[:,1:,:])],
+                      V[abs(B[:,:-1,:]-A[:,1:,:])],
+                      V[abs(B[:,:-1,:]-B[:,1:,:])]])
         Vz = np.array(wz*[
-                      V[abs(A[below]-A[above])],
-                      V[abs(A[below]-B[above])],
-                      V[abs(B[below]-A[above])],
-                      V[abs(B[below]-B[above])]])
+                      V[abs(A[:-1,:,:]-A[1:,:,:])],
+                      V[abs(A[:-1,:,:]-B[1:,:,:])],
+                      V[abs(B[:-1,:,:]-A[1:,:,:])],
+                      V[abs(B[:-1,:,:]-B[1:,:,:])]])
 
         print('Solving MRF using QPBO...', end='')
-        label = QPBO(level['nx'], level['ny'], level['nz'], D, Vx, Vy, Vz)
+        label = QPBO(D, Vx, Vy, Vz)
         print('DONE')
 
         dB0[label == 0] = A[label == 0]
@@ -299,8 +242,7 @@ def calculateFieldMap(nB0, level, graphcutLevel, multiScale, maxICMupdate,
     # ICM
     if nICMiter > 0:
         print('Solving MRF using ICM...', end='')
-        dB0 = ICM(dB0, nB0, maxICMupdate, nICMiter, J, V,
-                  wx, wy, wz, left, right, up, down, above, below)
+        dB0 = ICM(dB0, nB0, maxICMupdate, nICMiter, J, V, wx, wy, wz)
         print('DONE')
     return dB0
 
@@ -323,16 +265,16 @@ def getRealDemodulated(Y, D):
 
 
 # Calculate LS error J as function of B0
-def getB0Residuals(Y, C, nB0, nVxl, iR2cand, D=None):
-    J = np.zeros(shape=(nB0, nVxl, len(iR2cand)))
+def getB0Residuals(Y, C, nB0, iR2cand, D=None):
+    J = np.zeros(shape=(nB0, Y.shape[1], Y.shape[2], Y.shape[3], len(iR2cand)))
     for r in range(len(iR2cand)):
         for b in range(nB0):
             if not D:  # complex-valued estimates
                 y = Y
             else:  # real-valued estimates
                 y, phi = getRealDemodulated(Y, D[r][b])
-            J[b, :, r] = np.linalg.norm(np.dot(C[iR2cand[r]][b], y), axis=0)**2
-    J = np.min(J, axis=2) # minimum over R2* candidates
+            J[b, :, :, :, r] = np.linalg.norm(np.tensordot(C[iR2cand[r]][b], y, axes=(1,0)), axis=0)**2
+    J = np.min(J, axis=4) # minimum over R2* candidates
     return J
 
 
@@ -392,7 +334,6 @@ def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
     nVxl = dPar['nx']*dPar['ny']*dPar['nz']
 
     Y = dPar['img']
-    Y.shape = (dPar['N'], nVxl)
 
     # Prepare matrices
     # Off-resonance modulation vectors (one for each off-resonance value)
@@ -436,7 +377,7 @@ def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
         level = {'L': 0, 'nx': dPar['nx'], 'ny': dPar['ny'], 'nz': dPar['nz'],
                  'sx': 1, 'sy': 1, 'sz': 1,
                  'dx': dPar['dx'], 'dy': dPar['dy'], 'dz': dPar['dz']}
-        J = getB0Residuals(Y, C, aPar['nB0'], nVxl, aPar['iR2cand'], D)
+        J = getB0Residuals(Y, C, aPar['nB0'], aPar['iR2cand'], D)
         offresPenalty = aPar['offresPenalty']
         if aPar['offresPenalty'] > 0:
             offresPenalty *= getMeanEnergy(Y)
@@ -446,20 +387,20 @@ def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
                                 aPar['nICMiter'], J, V, aPar['mu'],
                                 offresPenalty, int(dPar['offresCenter']/B0step))
     elif B0map is None:
-        dB0 = np.zeros(nVxl, dtype=int)
+        dB0 = np.zeros(Y.shape[1:], dtype=int)
     else:
         dB0 = np.array(B0map/B0step, dtype=int)
 
     if determineR2:
-        J = getR2Residuals(Y, dB0, C, aPar['nB0'], aPar['nR2'], nVxl, D)
+        J = getR2Residuals(Y, dB0, C, aPar['nB0'], aPar['nR2'], D)
         R2 = np.argmin(J, axis=0) # brute force minimization
     elif R2map is None:
-        R2 = np.zeros(nVxl, dtype=int)
+        R2 = np.zeros(Y.shape[1:], dtype=int)
     else:
         R2 = np.array(R2map/aPar['R2step'], dtype=int)
 
     # Find least squares solution given dB0 and R2
-    rho = np.zeros(shape=(mPar['M'], nVxl), dtype=complex)
+    rho = np.zeros(shape=(mPar['M'], dPar['nz'], dPar['ny'], dPar['nx']), dtype=complex)
     for r in range(aPar['nR2']):
         for b in range(aPar['nB0']):
             vxls = (dB0 == b)*(R2 == r)
@@ -474,9 +415,9 @@ def reconstruct(dPar, aPar, mPar, B0map=None, R2map=None):
                 rho[:, vxls] *= np.exp(1j*phi)
 
     if B0map is None:
-        B0map = np.zeros(nVxl)
+        B0map = np.zeros(Y.shape[1:])
     if R2map is None:
-        R2map = np.empty(nVxl)
+        R2map = np.empty(Y.shape[1:])
 
     if determineR2:
         R2map[:] = R2*aPar['R2step']
